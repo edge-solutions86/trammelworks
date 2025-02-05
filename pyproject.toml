@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: System :: Logging",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = ["PyYAML>=6.0.1,<6.1"]
 
 [project.urls]
 Source = "https://github.com/rkaushik-dev/Python_container_log_aggregator"
