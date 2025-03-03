@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import timedelta
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from stanchion.errors import ConfigError
@@ -41,6 +41,17 @@ def _require_positive(name: str, value: int) -> int:
     return value
 
 
+def is_absolute_path(raw: str) -> bool:
+    """True for a path that is absolute under either convention.
+
+    A site controller is Linux and every path in a real config is posix. The
+    commissioning tool, though, runs on the field engineer's Windows laptop and
+    validates the file it is about to push, so a drive rooted path has to be
+    recognised as absolute rather than reported as a mistake it is not.
+    """
+    return PurePosixPath(raw).is_absolute() or PureWindowsPath(raw).is_absolute()
+
+
 @dataclass(frozen=True, slots=True)
 class IngestConfig:
     """Where the container runtime writes and how it is read."""
@@ -52,7 +63,7 @@ class IngestConfig:
     units: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not PurePosixPath(self.log_root).is_absolute():
+        if not is_absolute_path(self.log_root):
             raise ConfigError("log_root must be an absolute path", detail=self.log_root)
         _require_positive("read_chunk", self.read_chunk)
         _require_positive("max_line_bytes", self.max_line_bytes)
@@ -76,7 +87,7 @@ class SpoolConfig:
     reserve_ratio: float = DEFAULT_RESERVE_RATIO
 
     def __post_init__(self) -> None:
-        if not PurePosixPath(self.directory).is_absolute():
+        if not is_absolute_path(self.directory):
             raise ConfigError("spool directory must be absolute", detail=self.directory)
         _require_positive("budget_bytes", self.budget_bytes)
         _require_positive("segment_bytes", self.segment_bytes)

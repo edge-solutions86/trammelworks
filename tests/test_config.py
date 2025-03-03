@@ -172,3 +172,12 @@ def test_mapping_builder_names_every_unknown_section() -> None:
 def test_mapping_builder_stringifies_label_values() -> None:
     cfg = site_from_mapping({"site": "US-TX-0417", "labels": {"lane": 3}})
     assert cfg.labels == {"lane": "3"}
+
+
+def test_a_windows_drive_path_counts_as_absolute() -> None:
+    assert SpoolConfig(directory="C:/spool").directory == "C:/spool"
+
+
+def test_a_bare_name_is_still_relative() -> None:
+    with pytest.raises(ConfigError, match="must be absolute"):
+        SpoolConfig(directory="spool/here")
