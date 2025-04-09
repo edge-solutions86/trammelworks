@@ -6,14 +6,20 @@ same thing and conflating them is the single most expensive mistake available
 here: the CRI runtime splits an application line at 16 KiB and marks every piece
 but the last as partial, so a stack trace from the payment kernel arrives as
 four fragments that must become one record.
+
+Both carry a ``NanoTime`` rather than a ``datetime``. The runtime writes nine
+fractional digits and ``datetime`` holds six, so the record types used to lose
+three digits at the door and the ordering that goes with them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
+
+from stanchion.timestamps import NanoTime
 
 
 class Stream(StrEnum):
@@ -65,19 +71,19 @@ class SourceRef:
 class Fragment:
     """One physical line read out of a container runtime log file."""
 
-    observed_at: datetime
+    observed_at: NanoTime
     stream: Stream
     message: str
     source: SourceRef
     partial: bool = False
-
-    def __post_init__(self) -> None:
-        if self.observed_at.tzinfo is None:
-            raise ValueError("fragment timestamps must carry a timezone")
+    lossy: bool = False
 
     @property
-    def utc(self) -> datetime:
-        return self.observed_at.astimezone(UTC)
+    def complete(self) -> bool:
+        return not self.partial
+
+    def to_datetime(self) -> datetime:
+        return self.observed_at.to_datetime()
 
     def with_message(self, message: str) -> Fragment:
         return replace(self, message=message)
@@ -90,22 +96,21 @@ class LogRecord:
     site: str
     unit: str
     stream: Stream
-    observed_at: datetime
+    observed_at: NanoTime
     message: str
     sources: tuple[SourceRef, ...] = ()
     labels: dict[str, str] = field(default_factory=dict)
+    lossy: bool = False
 
     def __post_init__(self) -> None:
         if not self.site:
             raise ValueError("site must not be empty")
         if not self.unit:
             raise ValueError("unit must not be empty")
-        if self.observed_at.tzinfo is None:
-            raise ValueError("record timestamps must carry a timezone")
 
-    @property
-    def utc(self) -> datetime:
-        return self.observed_at.astimezone(UTC)
+    def to_datetime(self) -> datetime:
+        """For anything that has to talk to a calendar. Loses three digits."""
+        return self.observed_at.to_datetime()
 
     @property
     def byte_length(self) -> int:
@@ -126,7 +131,7 @@ class LogRecord:
             "site": self.site,
             "unit": self.unit,
             "stream": self.stream.value,
-            "observed_at": self.utc.isoformat().replace("+00:00", "Z"),
+            "observed_at": self.observed_at.isoformat(),
             "message": self.message,
             "labels": dict(self.labels),
             "sources": [str(ref) for ref in self.sources],

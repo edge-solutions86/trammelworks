@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from stanchion.records import Fragment, LogRecord, SourceRef, Stream
+from stanchion.timestamps import NanoTime
 
-CENTRAL = timezone(timedelta(hours=-6))
+TS = "2025-03-04T11:30:00.123456789Z"
 
 
-def ts(second: int = 0) -> datetime:
-    return datetime(2025, 3, 4, 11, 30, second, tzinfo=UTC)
+def ts(raw: str = TS) -> NanoTime:
+    return NanoTime.parse(raw)
 
 
 def ref(offset: int = 0, length: int = 64) -> SourceRef:
@@ -65,38 +66,43 @@ def test_source_ref_str_is_greppable() -> None:
     assert str(ref(offset=7, length=3)) == "/var/log/containers/payment.log@7+3"
 
 
-def test_fragment_requires_an_aware_timestamp() -> None:
-    with pytest.raises(ValueError, match="must carry a timezone"):
-        Fragment(
-            observed_at=datetime(2025, 3, 4, 11, 30),
-            stream=Stream.STDOUT,
-            message="hi",
-            source=ref(),
-        )
+def test_fragment_keeps_all_nine_digits() -> None:
+    frag = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
+    assert frag.observed_at.nanos_in_second == 123456789
 
 
-def test_fragment_utc_normalizes_the_offset() -> None:
-    frag = Fragment(
-        observed_at=datetime(2025, 3, 4, 5, 30, tzinfo=CENTRAL),
-        stream=Stream.STDOUT,
-        message="hi",
-        source=ref(),
-    )
-    assert frag.utc == ts()
+def test_fragment_to_datetime_truncates_to_the_microsecond() -> None:
+    frag = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
+    assert frag.to_datetime() == datetime(2025, 3, 4, 11, 30, 0, 123456, tzinfo=UTC)
 
 
-def test_fragment_defaults_to_complete() -> None:
+def test_fragment_defaults_to_complete_and_clean() -> None:
     frag = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
     assert frag.partial is False
+    assert frag.complete is True
+    assert frag.lossy is False
+
+
+def test_fragment_complete_is_the_opposite_of_partial() -> None:
+    frag = Fragment(
+        observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref(), partial=True
+    )
+    assert frag.complete is False
 
 
 def test_fragment_with_message_keeps_everything_else() -> None:
     frag = Fragment(
-        observed_at=ts(), stream=Stream.STDERR, message="ab", source=ref(), partial=True
+        observed_at=ts(),
+        stream=Stream.STDERR,
+        message="ab",
+        source=ref(),
+        partial=True,
+        lossy=True,
     )
     swapped = frag.with_message("abcd")
     assert swapped.message == "abcd"
     assert swapped.partial is True
+    assert swapped.lossy is True
     assert swapped.stream is Stream.STDERR
     assert swapped.source == frag.source
 
@@ -128,11 +134,6 @@ def test_record_rejects_an_empty_unit() -> None:
         record(unit="")
 
 
-def test_record_rejects_a_naive_timestamp() -> None:
-    with pytest.raises(ValueError, match="must carry a timezone"):
-        record(observed_at=datetime(2025, 3, 4, 11, 30))
-
-
 def test_record_byte_length_counts_utf8_not_characters() -> None:
     assert record(message="abc").byte_length == 3
     assert record(message="prix affýché").byte_length == 14
@@ -141,6 +142,17 @@ def test_record_byte_length_counts_utf8_not_characters() -> None:
 def test_record_fragment_count_follows_the_sources() -> None:
     assert record().fragment_count == 0
     assert record(sources=(ref(0, 10), ref(10, 10))).fragment_count == 2
+
+
+def test_record_to_datetime_loses_the_last_three_digits() -> None:
+    assert record().to_datetime().microsecond == 123456
+
+
+def test_two_records_one_nanosecond_apart_stay_ordered() -> None:
+    early = record(observed_at=ts("2025-03-04T11:30:00.000000001Z"))
+    late = record(observed_at=ts("2025-03-04T11:30:00.000000002Z"))
+    assert early.observed_at < late.observed_at
+    assert early.to_datetime() == late.to_datetime()
 
 
 def test_with_labels_merges_and_does_not_mutate() -> None:
@@ -154,15 +166,10 @@ def test_with_labels_overwrites_a_repeated_key() -> None:
     assert record(labels={"lane": "3"}).with_labels(lane="4").labels == {"lane": "4"}
 
 
-def test_as_dict_renders_the_timestamp_with_a_z() -> None:
+def test_as_dict_renders_all_nine_digits() -> None:
     payload = record().as_dict()
-    assert payload["observed_at"] == "2025-03-04T11:30:00Z"
+    assert payload["observed_at"] == "2025-03-04T11:30:00.123456789Z"
     assert payload["stream"] == "stdout"
-
-
-def test_as_dict_converts_a_local_timestamp_to_utc() -> None:
-    payload = record(observed_at=datetime(2025, 3, 4, 5, 30, tzinfo=CENTRAL)).as_dict()
-    assert payload["observed_at"] == "2025-03-04T11:30:00Z"
 
 
 def test_as_dict_stringifies_the_sources() -> None:
@@ -176,3 +183,8 @@ def test_as_dict_copies_the_labels() -> None:
     assert isinstance(payload["labels"], dict)
     payload["labels"]["lane"] = "9"
     assert original.labels == {"lane": "3"}
+
+
+def test_a_record_may_be_marked_lossy() -> None:
+    assert record(lossy=True).lossy is True
+    assert record().lossy is False

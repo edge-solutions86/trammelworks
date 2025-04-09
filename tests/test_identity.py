@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
-
 import pytest
 
 from stanchion.errors import ConfigError
 from stanchion.identity import UnitRef, parse_site, parse_unit, record_key, short_id
 from stanchion.records import LogRecord, Stream
+from stanchion.timestamps import NanoTime
 
 FULL_ID = "9f" * 32
 
@@ -16,7 +15,7 @@ def record(**over: object) -> LogRecord:
         "site": "US-TX-0417",
         "unit": "payment-kernel",
         "stream": Stream.STDOUT,
-        "observed_at": datetime(2025, 3, 4, 11, 30, tzinfo=UTC),
+        "observed_at": NanoTime.parse("2025-03-04T11:30:00Z"),
         "message": "auth approved",
     }
     base.update(over)
@@ -120,7 +119,7 @@ def test_record_key_is_hex_of_the_declared_width() -> None:
         ("unit", "tank-gauge"),
         ("stream", Stream.STDERR),
         ("message", "auth declined"),
-        ("observed_at", datetime(2025, 3, 4, 11, 30, 1, tzinfo=UTC)),
+        ("observed_at", NanoTime.parse("2025-03-04T11:30:00.000000001Z")),
     ],
 )
 def test_record_key_changes_with_every_graded_field(field: str, value: object) -> None:
@@ -128,8 +127,13 @@ def test_record_key_changes_with_every_graded_field(field: str, value: object) -
 
 
 def test_record_key_ignores_the_offset_a_site_writes_in() -> None:
-    central = record(observed_at=datetime(2025, 3, 4, 5, 30, tzinfo=timezone(timedelta(hours=-6))))
+    central = record(observed_at=NanoTime.parse("2025-03-04T05:30:00-06:00"))
     assert record_key(central) == record_key(record())
+
+
+def test_record_key_separates_two_records_one_nanosecond_apart() -> None:
+    near = record(observed_at=NanoTime.parse("2025-03-04T11:30:00.000000001Z"))
+    assert record_key(near) != record_key(record())
 
 
 def test_record_key_ignores_labels_and_sources() -> None:

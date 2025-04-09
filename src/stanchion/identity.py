@@ -89,7 +89,7 @@ def record_key(record: LogRecord) -> str:
     """Compute the dedupe key for a record.
 
     Deliberately built only from fields the collector also receives. The
-    timestamp is taken to microsecond precision in UTC so that two site
+    timestamp goes in at full nanosecond precision in UTC so that two site
     controllers in different offsets agree, and the message is hashed in UTF-8
     so that an encoding round trip does not change the answer.
     """
@@ -100,7 +100,7 @@ def record_key(record: LogRecord) -> str:
     digest.update(b"\x1f")
     digest.update(record.stream.value.encode("ascii"))
     digest.update(b"\x1f")
-    digest.update(record.utc.isoformat().encode("ascii"))
+    digest.update(record.observed_at.isoformat().encode("ascii"))
     digest.update(b"\x1f")
     digest.update(record.message.encode("utf-8"))
     return digest.hexdigest()
