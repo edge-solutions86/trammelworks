@@ -164,3 +164,41 @@ def test_journal_maps_priority_to_the_stream() -> None:
     block = b"__REALTIME_TIMESTAMP=1741087800123456\nPRIORITY=3\nMESSAGE=boom\n\n"
     result = JournalReader().read(block, path=PATH)
     assert result.fragments[0].stream is Stream.STDERR
+
+
+def test_reader_for_picks_the_cri_reader() -> None:
+    from stanchion.ingest.detect import Format
+    from stanchion.ingest.readers import reader_for
+
+    result = reader_for(Format.CRI).read(cri("one"), path=PATH)
+    assert [f.message for f in result.fragments] == ["one"]
+
+
+def test_reader_for_picks_the_jsonfile_reader() -> None:
+    from stanchion.ingest.detect import Format
+    from stanchion.ingest.readers import reader_for
+
+    result = reader_for(Format.JSONFILE).read(jsonl("one\n"), path=PATH)
+    assert [f.message for f in result.fragments] == ["one"]
+
+
+def test_reader_for_picks_the_journal_reader() -> None:
+    from stanchion.ingest.detect import Format
+    from stanchion.ingest.readers import reader_for
+
+    result = reader_for(Format.JOURNAL).read(journal("one"), path=PATH)
+    assert [f.message for f in result.fragments] == ["one"]
+
+
+def test_the_two_line_readers_share_one_walk() -> None:
+    from stanchion.ingest.readers import LineReader
+
+    assert isinstance(CriReader(), LineReader)
+    assert isinstance(JsonFileReader(), LineReader)
+
+
+def test_the_shared_walk_reports_the_same_consumed_count() -> None:
+    left = CriReader().read(cri("one") + b"partial", path=PATH)
+    right = JsonFileReader().read(jsonl("one\n") + b"partial", path=PATH)
+    assert left.consumed == len(cri("one"))
+    assert right.consumed == len(jsonl("one\n"))

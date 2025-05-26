@@ -13,21 +13,51 @@ line of its own with no beginning.
 A line that will not parse is skipped rather than fatal. One bad line in a file
 is a bad line; refusing the file loses everything after it, which on a forecourt
 is the rest of the shift.
+
+The two line oriented formats differ only in how one line is decoded, so the
+walk over the buffer lives in one place and each format supplies the decode. The
+journal is genuinely different: its unit is a block ended by a blank line, not a
+line ended by a newline, so it keeps its own walk.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from stanchion.errors import ParseError
 from stanchion.ingest.cri import parse_cri_line
+from stanchion.ingest.detect import Format
 from stanchion.ingest.journal import parse_journal_export
 from stanchion.ingest.jsonfile import parse_jsonfile_line
-from stanchion.records import Fragment, SourceRef
+from stanchion.records import Fragment, SourceRef, Stream
+from stanchion.timestamps import NanoTime
 
 TERMINATOR = b"\n"
 BLOCK_TERMINATOR = b"\n\n"
+
+
+class ParsedLine(Protocol):
+    """What both line formats produce once decoded."""
+
+    @property
+    def timestamp(self) -> NanoTime: ...
+
+    @property
+    def stream(self) -> Stream: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def partial(self) -> bool: ...
+
+    @property
+    def lossy(self) -> bool: ...
+
+
+LineParser = Callable[..., ParsedLine]
 
 
 @dataclass(slots=True)
@@ -46,78 +76,52 @@ class FragmentReader(Protocol):
     def read(self, data: bytes, *, path: str, base_offset: int = 0) -> ReadResult: ...
 
 
-def _iter_lines(data: bytes) -> list[tuple[int, bytes]]:
-    """Split into complete lines, keeping each one's offset in the buffer."""
-    out: list[tuple[int, bytes]] = []
-    start = 0
-    while True:
-        end = data.find(TERMINATOR, start)
-        if end == -1:
-            return out
-        out.append((start, data[start : end + 1]))
-        start = end + 1
+@dataclass(frozen=True, slots=True)
+class LineReader:
+    """The shared walk over a newline delimited buffer."""
+
+    parse: LineParser
+
+    def read(self, data: bytes, *, path: str, base_offset: int = 0) -> ReadResult:
+        result = ReadResult()
+        start = 0
+        while True:
+            end = data.find(TERMINATOR, start)
+            if end == -1:
+                return result
+            raw = data[start : end + 1]
+            offset = start
+            start = end + 1
+            result.consumed = start
+            if not raw.strip():
+                result.skipped += 1
+                continue
+            try:
+                line = self.parse(raw, source=path, offset=base_offset + offset)
+            except ParseError as exc:
+                result.skipped += 1
+                result.errors.append(exc)
+                continue
+            result.fragments.append(
+                Fragment(
+                    observed_at=line.timestamp,
+                    stream=line.stream,
+                    message=line.message,
+                    source=SourceRef(path=path, offset=base_offset + offset, length=len(raw)),
+                    partial=line.partial,
+                    lossy=line.lossy,
+                )
+            )
 
 
-class CriReader:
+def CriReader() -> LineReader:
     """Reads the CRI text format."""
-
-    __slots__ = ()
-
-    def read(self, data: bytes, *, path: str, base_offset: int = 0) -> ReadResult:
-        result = ReadResult()
-        for offset, raw in _iter_lines(data):
-            result.consumed = offset + len(raw)
-            if not raw.strip():
-                result.skipped += 1
-                continue
-            try:
-                line = parse_cri_line(raw, source=path, offset=base_offset + offset)
-            except ParseError as exc:
-                result.skipped += 1
-                result.errors.append(exc)
-                continue
-            result.fragments.append(
-                Fragment(
-                    observed_at=line.timestamp,
-                    stream=line.stream,
-                    message=line.message,
-                    source=SourceRef(path=path, offset=base_offset + offset, length=len(raw)),
-                    partial=line.partial,
-                    lossy=line.lossy,
-                )
-            )
-        return result
+    return LineReader(parse=parse_cri_line)
 
 
-class JsonFileReader:
+def JsonFileReader() -> LineReader:
     """Reads the docker json-file format."""
-
-    __slots__ = ()
-
-    def read(self, data: bytes, *, path: str, base_offset: int = 0) -> ReadResult:
-        result = ReadResult()
-        for offset, raw in _iter_lines(data):
-            result.consumed = offset + len(raw)
-            if not raw.strip():
-                result.skipped += 1
-                continue
-            try:
-                line = parse_jsonfile_line(raw, source=path, offset=base_offset + offset)
-            except ParseError as exc:
-                result.skipped += 1
-                result.errors.append(exc)
-                continue
-            result.fragments.append(
-                Fragment(
-                    observed_at=line.timestamp,
-                    stream=line.stream,
-                    message=line.message,
-                    source=SourceRef(path=path, offset=base_offset + offset, length=len(raw)),
-                    partial=line.partial,
-                    lossy=line.lossy,
-                )
-            )
-        return result
+    return LineReader(parse=parse_jsonfile_line)
 
 
 class JournalReader:
@@ -160,3 +164,12 @@ class JournalReader:
                     )
                 )
         return result
+
+
+def reader_for(fmt: Format) -> FragmentReader:
+    """The reader that goes with a detected format."""
+    if fmt is Format.CRI:
+        return CriReader()
+    if fmt is Format.JSONFILE:
+        return JsonFileReader()
+    return JournalReader()
