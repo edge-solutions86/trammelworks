@@ -239,3 +239,85 @@ def test_a_bad_line_is_counted_and_skipped(logfile: Path) -> None:
     assert [f.message for f in result.fragments] == ["one", "three"]
     assert result.skipped == 1
     assert len(result.errors) == 1
+
+
+def test_a_rewrite_past_the_old_offset_is_still_a_truncation(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("first shift line one") + cri("first shift line two"))
+    tail.poll()
+    logfile.write_bytes(b"")
+    append(logfile, cri("second shift after copytruncate and a busy container"))
+    result = tail.poll()
+    assert result.event is TailEvent.TRUNCATED
+    assert [f.message for f in result.fragments] == [
+        "second shift after copytruncate and a busy container"
+    ]
+
+
+def test_a_plain_append_is_not_mistaken_for_a_rewrite(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("one"))
+    tail.poll()
+    append(logfile, cri("two"))
+    result = tail.poll()
+    assert result.event is TailEvent.GROWN
+
+
+def test_the_signature_is_taken_from_the_front_of_the_file(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("one"))
+    tail.poll()
+    assert tail.signature == cri("one").encode()[:64]
+
+
+def test_the_signature_grows_until_it_is_a_full_window(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, "short" + chr(10))
+    tail.poll()
+    assert len(tail.signature) == 6
+    append(logfile, cri("a line long enough to fill the rest of the window"))
+    tail.poll()
+    assert len(tail.signature) == 64
+
+
+def test_a_grown_file_still_starts_with_its_signature(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("one"))
+    tail.poll()
+    first = tail.signature
+    append(logfile, cri("two"))
+    tail.poll()
+    assert tail.signature.startswith(first)
+
+
+def test_the_signature_is_cleared_by_a_rotation(tmp_path: Path, logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("one"))
+    tail.poll()
+    logfile.rename(logfile.with_name("0.log.1"))
+    logfile.touch()
+    tail.poll()
+    assert tail.signature == b""
+
+
+def test_the_identity_survives_a_truncation(logfile: Path) -> None:
+    tail = tailer(logfile)
+    append(logfile, cri("one"))
+    tail.poll()
+    logfile.write_bytes(b"")
+    tail.poll()
+    assert tail.identity == FileIdentity.of(logfile)
+
+
+def test_seek_to_a_nonzero_offset_captures_a_signature(logfile: Path) -> None:
+    append(logfile, cri("one") + cri("two"))
+    tail = tailer(logfile)
+    tail.seek_to(len(cri("one")))
+    assert tail.signature != b""
+
+
+def test_seek_to_zero_leaves_no_signature(logfile: Path) -> None:
+    append(logfile, cri("one"))
+    tail = tailer(logfile)
+    tail.seek_to(0)
+    assert tail.signature == b""

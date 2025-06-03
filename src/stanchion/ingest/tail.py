@@ -18,8 +18,18 @@ question is always whether a gap was ours or the application's.
 
 File identity is device plus inode. That is a weaker guarantee than it looks:
 inodes are reused, so a fast rotate, delete and create can present the same pair
-for a different file. Size is checked as well, which does not close the hole but
-makes it much narrower.
+for a different file.
+
+Size is not enough either, and that one bit us. A ``copytruncate`` rotation
+followed by a busy container can push the new file past the old offset before the
+next poll, and then the size test says "grew" and the reader carries on from an
+offset that now points into the middle of a different shift. So the opening bytes
+of the file are kept as a signature.
+
+The signature is a *prefix*, not a fixed window, and the test is that the file
+still starts with it. A file that has only grown still starts with what it
+started with. A file that was rewritten does not, unless the new content repeats
+the old opening bytes, and a CRI line opens with a timestamp.
 """
 
 from __future__ import annotations
@@ -34,6 +44,10 @@ from stanchion.ingest.readers import FragmentReader
 from stanchion.records import Fragment
 
 DEFAULT_CHUNK = 64 * 1024
+
+#: How much of the head of the file to remember. One CRI line is about sixty
+#: bytes, so this covers a whole timestamp, which is the part that changes.
+SIGNATURE_BYTES = 64
 
 
 class TailEvent(StrEnum):
@@ -85,6 +99,7 @@ class Tailer:
     offset: int = 0
     identity: FileIdentity | None = None
     pending: bytes = b""
+    signature: bytes = b""
 
     def __post_init__(self) -> None:
         if self.chunk_size <= 0:
@@ -102,17 +117,17 @@ class Tailer:
                 self._reset()
             return result
         found = FileIdentity(device=info.st_dev, inode=info.st_ino)
+        head = self._head() if self.signature else b""
         if self.identity is None:
             self.identity = found
         elif found != self.identity:
-            result.event = TailEvent.ROTATED
-            result.lost_bytes = len(self.pending)
-            self._reset()
-            self.identity = found
+            self._restart(result, TailEvent.ROTATED, found)
         elif info.st_size < self.offset:
-            result.event = TailEvent.TRUNCATED
-            result.lost_bytes = len(self.pending)
-            self._reset()
+            self._restart(result, TailEvent.TRUNCATED, found)
+        elif self.signature and not head.startswith(self.signature):
+            # Same inode, same or larger size, different bytes at the front.
+            # copytruncate, and the container refilled it before we looked.
+            self._restart(result, TailEvent.TRUNCATED, found)
         if info.st_size <= self.offset:
             return result
         chunk = self._read_chunk()
@@ -129,7 +144,27 @@ class Tailer:
         result.errors = parsed.errors
         self.offset += len(chunk)
         self.pending = buffer[parsed.consumed :]
+        self._remember_head()
         return result
+
+    def _restart(self, result: PollResult, event: TailEvent, found: FileIdentity) -> None:
+        result.event = event
+        result.lost_bytes = len(self.pending)
+        self._reset()
+        self.identity = found
+
+    def _head(self) -> bytes:
+        """The opening bytes of the file, however few there are."""
+        try:
+            with self.path.open("rb") as handle:
+                return handle.read(SIGNATURE_BYTES)
+        except FileNotFoundError:
+            return b""
+
+    def _remember_head(self) -> None:
+        """Grow the signature until it is a full window, then leave it alone."""
+        if len(self.signature) < SIGNATURE_BYTES:
+            self.signature = self._head()
 
     def _read_chunk(self) -> bytes:
         with self.path.open("rb") as handle:
@@ -140,6 +175,7 @@ class Tailer:
         self.offset = 0
         self.pending = b""
         self.identity = None
+        self.signature = b""
 
     @property
     def buffered(self) -> int:
@@ -153,3 +189,4 @@ class Tailer:
         self.offset = offset
         self.pending = b""
         self.identity = identity
+        self.signature = self._head() if offset else b""
