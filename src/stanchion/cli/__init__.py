@@ -1,0 +1,1 @@
+"""The stanchion command line."""

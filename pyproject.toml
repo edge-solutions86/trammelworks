@@ -18,7 +18,17 @@ classifiers = [
     "Topic :: System :: Logging",
     "Typing :: Typed",
 ]
-dependencies = ["PyYAML>=6.0.1,<6.1"]
+# Upper bounds are tight rather than major version wide on purpose. click 8.2
+# changed how a required option is enforced when a group is invoked with
+# standalone_mode off, and a range that admits that is a range that admits a
+# silent behaviour change on a box nobody logs into.
+dependencies = [
+    "click>=8.1.7,<8.2",
+    "PyYAML>=6.0.1,<6.1",
+]
+
+[project.scripts]
+stanchion = "stanchion.cli.main:run"
 
 [project.urls]
 Source = "https://github.com/rkaushik-dev/Python_container_log_aggregator"

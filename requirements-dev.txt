@@ -1,6 +1,7 @@
 # The development stack, pinned exactly. Runtime deps are pinned here as well as
 # bounded in pyproject.toml, otherwise CI resolves whatever is newest inside the
 # bounds and stops testing the versions anyone actually runs on a site.
+click==8.1.8
 hypothesis==6.125.3
 mypy==1.15.0
 pytest==8.3.4
