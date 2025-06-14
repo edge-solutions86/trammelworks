@@ -61,7 +61,11 @@ class SiteTree:
         return flat / f"{unit}-0_{self.namespace}_{unit}-{container_id}.log"
 
     def docker_path(self, container_id: str) -> Path:
-        holder = self.root / "docker" / container_id
+        # The container directory sits straight under the root rather than under
+        # a "docker" segment. Two sixty four character names in one path is
+        # already close to the Windows limit, and the parser only cares that the
+        # file lives in a directory named after its container.
+        holder = self.root / container_id
         holder.mkdir(parents=True, exist_ok=True)
         return holder / f"{container_id}-json.log"
 
