@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from stanchion.cli.main import load_commands
 from stanchion.clocks import ManualClock
 from stanchion.config import IngestConfig, SiteConfig, SpoolConfig
 from stanchion.eventlog import EventLog, Level
@@ -42,3 +43,9 @@ def site_config(tmp_path: Path, tree: SiteTree) -> SiteConfig:
         ingest=IngestConfig(log_root=tree.root.as_posix()),
         spool=SpoolConfig(directory=(tmp_path / "spool").as_posix()),
     )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _commands_are_attached() -> None:
+    """The CLI group only carries its subcommands once they are imported."""
+    load_commands()

@@ -86,8 +86,19 @@ def version_command() -> None:
     click.echo(VERSION)
 
 
+def load_commands() -> None:
+    """Attach the subcommands that live in their own modules.
+
+    Imported here rather than at the top so that the group exists before a
+    command module tries to decorate it. Circular by construction, deliberate,
+    and the alternative is a registry nobody remembers to add to.
+    """
+    from stanchion.cli import ingest_cmd  # noqa: F401
+
+
 def run(argv: list[str] | None = None) -> int:
     """Entry point that turns an expected failure into an exit code."""
+    load_commands()
     try:
         cli.main(args=argv if argv is not None else sys.argv[1:], standalone_mode=False)
     except SystemExit as exc:
