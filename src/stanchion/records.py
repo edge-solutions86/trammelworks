@@ -7,6 +7,12 @@ here: the CRI runtime splits an application line at 16 KiB and marks every piece
 but the last as partial, so a stack trace from the payment kernel arrives as
 four fragments that must become one record.
 
+A record carries two times once it has been through clock correction:
+``observed_at`` is what the box claimed and never changes, and ``corrected_at``
+is what we believe. Keeping both is not tidiness. A dispute review compares our
+record against the till roll, and "the box said 11:29:53 and we think it was
+really 11:30:00" is an answer, while a single silently adjusted timestamp is not.
+
 Both carry a ``NanoTime`` rather than a ``datetime``. The runtime writes nine
 fractional digits and ``datetime`` holds six, so the record types used to lose
 three digits at the door and the ordering that goes with them.
@@ -101,6 +107,8 @@ class LogRecord:
     sources: tuple[SourceRef, ...] = ()
     labels: dict[str, str] = field(default_factory=dict)
     lossy: bool = False
+    corrected_at: NanoTime | None = None
+    clock_confidence: str = "unknown"
 
     def __post_init__(self) -> None:
         if not self.site:
@@ -126,8 +134,13 @@ class LogRecord:
         merged.update(extra)
         return replace(self, labels=merged)
 
+    @property
+    def best_at(self) -> NanoTime:
+        """The corrected time where there is one, otherwise the raw reading."""
+        return self.corrected_at if self.corrected_at is not None else self.observed_at
+
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "site": self.site,
             "unit": self.unit,
             "stream": self.stream.value,
@@ -135,4 +148,8 @@ class LogRecord:
             "message": self.message,
             "labels": dict(self.labels),
             "sources": [str(ref) for ref in self.sources],
+            "clock_confidence": self.clock_confidence,
         }
+        if self.corrected_at is not None:
+            payload["corrected_at"] = self.corrected_at.isoformat()
+        return payload
