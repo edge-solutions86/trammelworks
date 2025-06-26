@@ -202,3 +202,35 @@ def test_the_shared_walk_reports_the_same_consumed_count() -> None:
     right = JsonFileReader().read(jsonl("one\n") + b"partial", path=PATH)
     assert left.consumed == len(cri("one"))
     assert right.consumed == len(jsonl("one\n"))
+
+
+def journal_positioned(message: str) -> bytes:
+    fields = [
+        "__REALTIME_TIMESTAMP=1741087800123456",
+        "__MONOTONIC_TIMESTAMP=98765432",
+        "_BOOT_ID=4c1f2e3d4c1f2e3d4c1f2e3d4c1f2e3d",
+        f"MESSAGE={message}",
+        "",
+        "",
+    ]
+    return chr(10).join(fields).encode()
+
+
+def test_journal_passes_the_monotonic_position_through() -> None:
+    result = JournalReader().read(journal_positioned("auth"), path=PATH)
+    assert result.fragments[0].labels["monotonic_ns"] == str(98765432 * 1000)
+
+
+def test_journal_passes_the_boot_id_through() -> None:
+    result = JournalReader().read(journal_positioned("auth"), path=PATH)
+    assert result.fragments[0].labels["boot_id"] == "4c1f2e3d4c1f2e3d4c1f2e3d4c1f2e3d"
+
+
+def test_an_entry_with_no_position_carries_no_labels() -> None:
+    result = JournalReader().read(journal("plain"), path=PATH)
+    assert result.fragments[0].labels == {}
+
+
+def test_the_cri_reader_leaves_labels_empty() -> None:
+    result = CriReader().read(cri("one"), path=PATH)
+    assert result.fragments[0].labels == {}

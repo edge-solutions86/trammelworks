@@ -29,13 +29,19 @@ from typing import Protocol
 from stanchion.errors import ParseError
 from stanchion.ingest.cri import parse_cri_line
 from stanchion.ingest.detect import Format
-from stanchion.ingest.journal import parse_journal_export
+from stanchion.ingest.journal import JournalEntry, parse_journal_export
 from stanchion.ingest.jsonfile import parse_jsonfile_line
 from stanchion.records import Fragment, SourceRef, Stream
-from stanchion.timestamps import NanoTime
+from stanchion.timestamps import NS_PER_US, NanoTime
 
 TERMINATOR = b"\n"
 BLOCK_TERMINATOR = b"\n\n"
+
+#: Labels the journal reader passes through for clock correction to use. They
+#: name a real position in a boot session, which is the one thing the other two
+#: formats cannot supply.
+MONOTONIC_LABEL = "monotonic_ns"
+BOOT_LABEL = "boot_id"
 
 
 class ParsedLine(Protocol):
@@ -125,7 +131,13 @@ def JsonFileReader() -> LineReader:
 
 
 class JournalReader:
-    """Reads the journald export format, whose unit is a block not a line."""
+    """Reads the journald export format, whose unit is a block not a line.
+
+    This is the one format that knows where in the boot session its entry sits.
+    ``_BOOT_ID`` and ``__MONOTONIC_TIMESTAMP`` are carried through as labels so
+    that clock correction can use the real position rather than estimating one
+    from the wall clock it is trying to correct.
+    """
 
     __slots__ = ()
 
@@ -148,22 +160,31 @@ class JournalReader:
                 continue
             for entry in entries:
                 try:
-                    stamp = entry.realtime
-                    stream = entry.stream
+                    fragment = _from_journal(entry, path, base_offset + offset, len(block))
                 except ParseError as exc:
                     result.skipped += 1
                     result.errors.append(exc)
                     continue
-                result.fragments.append(
-                    Fragment(
-                        observed_at=stamp,
-                        stream=stream,
-                        message=entry.message,
-                        source=SourceRef(path=path, offset=base_offset + offset, length=len(block)),
-                        partial=False,
-                    )
-                )
+                result.fragments.append(fragment)
         return result
+
+
+def _from_journal(entry: JournalEntry, path: str, offset: int, length: int) -> Fragment:
+    """One journal entry as a fragment, position labels included."""
+    labels: dict[str, str] = {}
+    monotonic = entry.monotonic_us
+    if monotonic is not None:
+        labels[MONOTONIC_LABEL] = str(monotonic * NS_PER_US)
+    if entry.boot_id is not None:
+        labels[BOOT_LABEL] = entry.boot_id
+    return Fragment(
+        observed_at=entry.realtime,
+        stream=entry.stream,
+        message=entry.message,
+        source=SourceRef(path=path, offset=offset, length=length),
+        partial=False,
+        labels=labels,
+    )
 
 
 def reader_for(fmt: Format) -> FragmentReader:

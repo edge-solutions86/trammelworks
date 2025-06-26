@@ -83,6 +83,7 @@ class Fragment:
     source: SourceRef
     partial: bool = False
     lossy: bool = False
+    labels: dict[str, str] = field(default_factory=dict)
 
     @property
     def complete(self) -> bool:

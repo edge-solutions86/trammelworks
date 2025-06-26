@@ -107,9 +107,30 @@ def test_fragment_with_message_keeps_everything_else() -> None:
     assert swapped.source == frag.source
 
 
-def test_fragment_is_hashable_so_it_can_go_in_a_set() -> None:
+def test_two_fragments_with_the_same_content_are_equal() -> None:
+    left = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
+    right = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
+    assert left == right
+
+
+def test_labels_are_part_of_what_makes_a_fragment_equal() -> None:
+    plain = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
+    tagged = Fragment(
+        observed_at=ts(),
+        stream=Stream.STDOUT,
+        message="hi",
+        source=ref(),
+        labels={"boot_id": "b" * 32},
+    )
+    assert plain != tagged
+
+
+def test_a_fragment_carrying_labels_is_no_longer_hashable() -> None:
+    # Carrying a mapping costs hashability. Nothing puts a fragment in a set:
+    # it lives for one hop between the reader and the joiner.
     frag = Fragment(observed_at=ts(), stream=Stream.STDOUT, message="hi", source=ref())
-    assert len({frag, frag}) == 1
+    with pytest.raises(TypeError, match="unhashable"):
+        hash(frag)
 
 
 def record(**over: object) -> LogRecord:

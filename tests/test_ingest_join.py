@@ -250,3 +250,40 @@ def test_flush_is_counted_separately() -> None:
     joined.flush()
     assert joined.stats.flushed_open == 1
     assert joined.stats.truncated == 1
+
+
+def test_fragment_labels_reach_a_single_line_record() -> None:
+    joined = joiner()
+    tagged = Fragment(
+        observed_at=NanoTime.parse("2025-03-04T11:30:00Z"),
+        stream=Stream.STDOUT,
+        message="x",
+        source=SourceRef(path="a", offset=0, length=1),
+        labels={"boot_id": "b" * 32},
+    )
+    record = joined.feed(tagged)
+    assert record is not None
+    assert record.labels["boot_id"] == "b" * 32
+
+
+def test_the_first_chunk_owns_the_labels() -> None:
+    joined = joiner()
+    first = Fragment(
+        observed_at=NanoTime.parse("2025-03-04T11:30:00Z"),
+        stream=Stream.STDOUT,
+        message="head ",
+        source=SourceRef(path="a", offset=0, length=1),
+        partial=True,
+        labels={"monotonic_ns": "100"},
+    )
+    tail = Fragment(
+        observed_at=NanoTime.parse("2025-03-04T11:30:01Z"),
+        stream=Stream.STDOUT,
+        message="tail",
+        source=SourceRef(path="a", offset=1, length=1),
+        labels={"monotonic_ns": "900"},
+    )
+    joined.feed(first)
+    record = joined.feed(tail)
+    assert record is not None
+    assert record.labels["monotonic_ns"] == "100"

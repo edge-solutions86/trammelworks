@@ -161,7 +161,7 @@ class Joiner:
         pending.size += size
 
     def _single(self, fragment: Fragment) -> LogRecord:
-        labels: dict[str, str] = {}
+        labels = dict(fragment.labels)
         if fragment.lossy:
             labels[LOSSY_LABEL] = "true"
         return LogRecord(
@@ -176,7 +176,9 @@ class Joiner:
         )
 
     def _assemble(self, pending: _Pending) -> LogRecord:
-        labels: dict[str, str] = {}
+        # The first chunk owns the labels for the same reason it owns the
+        # timestamp: it is the one that was there when the event happened.
+        labels = dict(pending.first.labels)
         if pending.truncated:
             labels[TRUNCATED_LABEL] = "true"
         if pending.lossy:
