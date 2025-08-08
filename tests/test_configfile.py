@@ -129,8 +129,13 @@ def test_dump_is_deterministic(tmp_path: Path) -> None:
 
 
 def test_dump_uses_block_style_so_support_can_read_it(tmp_path: Path) -> None:
+    # An empty mapping still renders as {}, which is fine. What must not appear
+    # is a flow mapping with anything in it, because that is the form that runs
+    # a whole section onto one unreadable line.
     cfg = load_site_config(write(tmp_path, SITE_YAML), environ={})
-    assert "{" not in dump_site_config(cfg)
+    rendered = dump_site_config(cfg)
+    assert "{}" in rendered
+    assert rendered.replace("{}", "").count("{") == 0
 
 
 def test_a_minimal_config_only_needs_a_site(tmp_path: Path) -> None:

@@ -18,6 +18,8 @@ from typing import Any
 
 from stanchion.errors import ConfigError
 from stanchion.identity import parse_site, parse_unit
+from stanchion.ingest.multiline import MultilineRule, rules_from_mapping
+from stanchion.redact.config import RedactConfig, redact_from_mapping
 from stanchion.units import parse_bytes, parse_duration
 
 DEFAULT_LOG_ROOT = "/var/log/containers"
@@ -61,6 +63,7 @@ class IngestConfig:
     read_chunk: int = DEFAULT_READ_CHUNK
     max_line_bytes: int = DEFAULT_MAX_LINE_BYTES
     units: tuple[str, ...] = ()
+    multiline: tuple[MultilineRule, ...] = ()
 
     def __post_init__(self) -> None:
         if not is_absolute_path(self.log_root):
@@ -75,6 +78,9 @@ class IngestConfig:
                 detail=f"{self.max_line_bytes} < {self.read_chunk}",
             )
         object.__setattr__(self, "units", tuple(parse_unit(u) for u in self.units))
+        named = [rule.unit for rule in self.multiline]
+        if len(set(named)) != len(named):
+            raise ConfigError("two multiline rules name the same unit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,10 +141,12 @@ class SiteConfig:
     ingest: IngestConfig = field(default_factory=IngestConfig)
     spool: SpoolConfig = field(default_factory=SpoolConfig)
     ship: ShipConfig = field(default_factory=ShipConfig)
+    redact: RedactConfig = field(default_factory=RedactConfig)
     labels: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "site", parse_site(self.site))
+        self.redact.check_site(self.site)
         for key, value in self.labels.items():
             if not key or not key.replace("_", "").replace("-", "").isalnum():
                 raise ConfigError("malformed label key", detail=key)
@@ -154,6 +162,20 @@ class SiteConfig:
                 "read_chunk": self.ingest.read_chunk,
                 "max_line_bytes": self.ingest.max_line_bytes,
                 "units": list(self.ingest.units),
+            },
+            "redact": {
+                "enabled": self.redact.enabled,
+                "keep_first": self.redact.keep_first,
+                "keep_last": self.redact.keep_last,
+                "rules": {
+                    rule.name: {
+                        "pattern": rule.pattern,
+                        "action": rule.action.value,
+                        "keep_first": rule.keep_first,
+                        "keep_last": rule.keep_last,
+                    }
+                    for rule in self.redact.rules
+                },
             },
             "spool": {
                 "directory": self.spool.directory,
@@ -181,6 +203,7 @@ def ingest_from_mapping(raw: dict[str, Any]) -> IngestConfig:
         read_chunk=parse_bytes(raw.get("read_chunk", DEFAULT_READ_CHUNK)),
         max_line_bytes=parse_bytes(raw.get("max_line_bytes", DEFAULT_MAX_LINE_BYTES)),
         units=tuple(raw.get("units", ())),
+        multiline=tuple(rules_from_mapping(raw.get("multiline", {})).values()),
     )
 
 
@@ -211,7 +234,7 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
     """Build a config from an already parsed mapping."""
     if "site" not in raw:
         raise ConfigError("config has no site id")
-    unknown = set(raw) - {"site", "ingest", "spool", "ship", "labels"}
+    unknown = set(raw) - {"site", "ingest", "spool", "ship", "redact", "labels"}
     if unknown:
         raise ConfigError("unknown config section", detail=", ".join(sorted(unknown)))
     return SiteConfig(
@@ -219,5 +242,6 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
         ingest=ingest_from_mapping(raw.get("ingest", {})),
         spool=spool_from_mapping(raw.get("spool", {})),
         ship=ship_from_mapping(raw.get("ship", {})),
+        redact=redact_from_mapping(raw.get("redact", {})),
         labels={str(k): str(v) for k, v in raw.get("labels", {}).items()},
     )

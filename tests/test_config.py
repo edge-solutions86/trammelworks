@@ -181,3 +181,64 @@ def test_a_windows_drive_path_counts_as_absolute() -> None:
 def test_a_bare_name_is_still_relative() -> None:
     with pytest.raises(ConfigError, match="must be absolute"):
         SpoolConfig(directory="spool/here")
+
+
+def test_the_redact_section_defaults_to_on() -> None:
+    assert SiteConfig(site="US-TX-0417").redact.enabled is True
+
+
+def test_a_disabled_pass_is_refused_at_site_construction() -> None:
+    from stanchion.redact.config import RedactConfig
+
+    with pytest.raises(ConfigError, match="only be disabled on a lab site"):
+        SiteConfig(site="US-TX-0417", redact=RedactConfig(enabled=False))
+
+
+def test_a_bench_site_may_disable_the_pass() -> None:
+    from stanchion.redact.config import RedactConfig
+
+    built = SiteConfig(site="XX-LAB-0001", redact=RedactConfig(enabled=False))
+    assert built.redact.enabled is False
+
+
+def test_the_redact_section_is_read_from_a_mapping() -> None:
+    built = site_from_mapping(
+        {
+            "site": "US-TX-0417",
+            "redact": {"keep_first": 0, "rules": {"driver": {"pattern": "driver=(x)"}}},
+        }
+    )
+    assert built.redact.keep_first == 0
+    assert built.redact.rule_names == ("driver",)
+
+
+def test_the_redact_section_appears_in_as_dict() -> None:
+    payload = SiteConfig(site="US-TX-0417").as_dict()
+    assert payload["redact"]["enabled"] is True
+    assert payload["redact"]["rules"] == {}
+
+
+def test_multiline_rules_are_read_into_ingest() -> None:
+    built = site_from_mapping(
+        {
+            "site": "US-TX-0417",
+            "ingest": {"multiline": {"payment-kernel": {"continuation": "^ +"}}},
+        }
+    )
+    assert [rule.unit for rule in built.ingest.multiline] == ["payment-kernel"]
+
+
+def test_two_multiline_rules_for_one_unit_are_refused() -> None:
+    from stanchion.ingest.multiline import MultilineRule
+
+    twice = (
+        MultilineRule(unit="pump-bridge", continuation="^ +"),
+        MultilineRule(unit="pump-bridge", start="^x"),
+    )
+    with pytest.raises(ConfigError, match="same unit"):
+        IngestConfig(multiline=twice)
+
+
+def test_an_unknown_top_level_section_is_still_refused() -> None:
+    with pytest.raises(ConfigError, match="unknown config section"):
+        site_from_mapping({"site": "US-TX-0417", "redactt": {}})
