@@ -93,7 +93,7 @@ def load_commands() -> None:
     command module tries to decorate it. Circular by construction, deliberate,
     and the alternative is a registry nobody remembers to add to.
     """
-    from stanchion.cli import clock_cmd, ingest_cmd  # noqa: F401
+    from stanchion.cli import clock_cmd, ingest_cmd, redact_cmd  # noqa: F401
 
 
 def run(argv: list[str] | None = None) -> int:
