@@ -175,12 +175,23 @@ class SegmentWriter:
         """True when this frame would take the segment past its size."""
         return self.size + frame_size > self.max_bytes
 
+    def close(self) -> None:
+        """Release the handle without sealing.
+
+        The segment stays a ``.part`` file and the next start recovers it. Used
+        when something else needs the directory, and by the tests that stand in
+        for a process that went away, since a held handle stops a rename on
+        Windows and would let a real bug hide behind a platform difference.
+        """
+        if self._handle is None:
+            return
+        self.flush()
+        self._handle.close()  # type: ignore[attr-defined]
+        self._handle = None
+
     def seal(self) -> SegmentInfo | None:
         """Close and rename. An empty segment is removed rather than sealed."""
-        if self._handle is not None:
-            self.flush()
-            self._handle.close()  # type: ignore[attr-defined]
-            self._handle = None
+        self.close()
         if not self.partial_path.exists():
             return None
         if self.size == 0:
