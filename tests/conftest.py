@@ -6,8 +6,9 @@ import pytest
 
 from stanchion.cli.main import load_commands
 from stanchion.clocks import ManualClock
-from stanchion.config import IngestConfig, SiteConfig, SpoolConfig
+from stanchion.config import IngestConfig, SiteConfig
 from stanchion.eventlog import EventLog, Level
+from stanchion.spool.config import SpoolSettings
 from stanchion.telemetry import Registry
 from tests.support.logfiles import SiteTree
 
@@ -41,7 +42,7 @@ def site_config(tmp_path: Path, tree: SiteTree) -> SiteConfig:
     return SiteConfig(
         site=SITE,
         ingest=IngestConfig(log_root=tree.root.as_posix()),
-        spool=SpoolConfig(directory=(tmp_path / "spool").as_posix()),
+        spool=SpoolSettings(directory=(tmp_path / "spool").as_posix()),
     )
 
 

@@ -5,13 +5,7 @@ from typing import Any
 
 import pytest
 
-from stanchion.config import (
-    IngestConfig,
-    ShipConfig,
-    SiteConfig,
-    SpoolConfig,
-    site_from_mapping,
-)
+from stanchion.config import IngestConfig, ShipConfig, SiteConfig, site_from_mapping
 from stanchion.errors import ConfigError
 
 
@@ -20,6 +14,7 @@ def test_defaults_build_a_usable_site() -> None:
     assert cfg.site == "US-TX-0417"
     assert cfg.ingest.log_root == "/var/log/containers"
     assert cfg.spool.budget_bytes == 512 * 1024 * 1024
+    assert cfg.spool.directory == "/var/lib/stanchion/spool"
     assert cfg.ship.max_attempts == 5
 
 
@@ -62,35 +57,6 @@ def test_ingest_rejects_a_malformed_unit_filter() -> None:
         IngestConfig(units=("pump bridge",))
 
 
-def test_spool_rejects_a_relative_directory() -> None:
-    with pytest.raises(ConfigError, match="must be absolute"):
-        SpoolConfig(directory="spool")
-
-
-def test_spool_rejects_a_segment_larger_than_the_budget() -> None:
-    with pytest.raises(ConfigError, match="cannot exceed budget_bytes"):
-        SpoolConfig(budget_bytes=1024, segment_bytes=2048)
-
-
-def test_spool_allows_a_segment_exactly_the_size_of_the_budget() -> None:
-    assert SpoolConfig(budget_bytes=4096, segment_bytes=4096).segment_bytes == 4096
-
-
-@pytest.mark.parametrize("ratio", [-0.1, 1.0, 1.5])
-def test_spool_rejects_a_reserve_ratio_outside_the_range(ratio: float) -> None:
-    with pytest.raises(ConfigError, match=r"reserve_ratio must be in"):
-        SpoolConfig(reserve_ratio=ratio)
-
-
-def test_spool_reserve_bytes_follows_the_ratio() -> None:
-    cfg = SpoolConfig(budget_bytes=1000, segment_bytes=100, reserve_ratio=0.25)
-    assert cfg.reserve_bytes == 250
-
-
-def test_spool_reserve_of_zero_is_allowed() -> None:
-    assert SpoolConfig(reserve_ratio=0.0).reserve_bytes == 0
-
-
 @pytest.mark.parametrize("endpoint", ["collector.invalid", "ftp://host/x", ""])
 def test_ship_rejects_a_non_http_endpoint(endpoint: str) -> None:
     with pytest.raises(ConfigError, match="must be an http url"):
@@ -130,8 +96,6 @@ def test_as_dict_round_trips_through_the_mapping_builder() -> None:
     cfg = SiteConfig(site="US-TX-0417", labels={"brand": "x"})
     payload = cfg.as_dict()
     payload["ingest"]["poll_interval"] = f"{payload['ingest']['poll_interval']}s"
-    payload["spool"]["budget"] = payload["spool"].pop("budget_bytes")
-    payload["spool"]["segment"] = payload["spool"].pop("segment_bytes")
     payload["ship"]["monthly_allowance"] = payload["ship"].pop("monthly_allowance_bytes")
     payload["ship"]["batch"] = payload["ship"].pop("batch_bytes")
     payload["ship"]["attempt_timeout"] = f"{payload['ship']['attempt_timeout']}s"
@@ -175,12 +139,12 @@ def test_mapping_builder_stringifies_label_values() -> None:
 
 
 def test_a_windows_drive_path_counts_as_absolute() -> None:
-    assert SpoolConfig(directory="C:/spool").directory == "C:/spool"
+    assert IngestConfig(log_root="C:/logs").log_root == "C:/logs"
 
 
 def test_a_bare_name_is_still_relative() -> None:
-    with pytest.raises(ConfigError, match="must be absolute"):
-        SpoolConfig(directory="spool/here")
+    with pytest.raises(ConfigError, match="must be an absolute path"):
+        IngestConfig(log_root="logs/here")
 
 
 def test_the_redact_section_defaults_to_on() -> None:

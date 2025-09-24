@@ -54,7 +54,7 @@ def test_config_prints_what_it_understood(runner: CliRunner, config: Path) -> No
     result = runner.invoke(cli, ["--config", str(config), "config"])
     assert result.exit_code == EXIT_OK
     assert "site: US-TX-0417" in result.output
-    assert "budget_bytes: 1073741824" in result.output
+    assert "budget: 1073741824" in result.output
 
 
 def test_config_check_is_quiet(runner: CliRunner, config: Path) -> None:

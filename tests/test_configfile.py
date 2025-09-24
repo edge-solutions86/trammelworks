@@ -120,7 +120,7 @@ def test_dump_round_trips_through_load(tmp_path: Path) -> None:
     original = load_site_config(write(tmp_path, SITE_YAML), environ={})
     rendered = dump_site_config(original)
     assert "site: US-TX-0417" in rendered
-    assert "budget_bytes" in rendered
+    assert "budget: 1073741824" in rendered
 
 
 def test_dump_is_deterministic(tmp_path: Path) -> None:

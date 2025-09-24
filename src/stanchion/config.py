@@ -20,16 +20,13 @@ from stanchion.errors import ConfigError
 from stanchion.identity import parse_site, parse_unit
 from stanchion.ingest.multiline import MultilineRule, rules_from_mapping
 from stanchion.redact.config import RedactConfig, redact_from_mapping
+from stanchion.spool.config import SpoolSettings, spool_settings_from_mapping
 from stanchion.units import parse_bytes, parse_duration
 
 DEFAULT_LOG_ROOT = "/var/log/containers"
 DEFAULT_POLL_INTERVAL = timedelta(seconds=2)
 DEFAULT_READ_CHUNK = 64 * 1024
 DEFAULT_MAX_LINE_BYTES = 1024 * 1024
-DEFAULT_SPOOL_DIR = "/var/lib/stanchion/spool"
-DEFAULT_SPOOL_BUDGET = 512 * 1024 * 1024
-DEFAULT_SEGMENT_SIZE = 8 * 1024 * 1024
-DEFAULT_RESERVE_RATIO = 0.1
 DEFAULT_ENDPOINT = "https://collector.invalid/v1/ingest"
 DEFAULT_MONTHLY_ALLOWANCE = 2 * 1000 * 1000 * 1000
 DEFAULT_BATCH_BYTES = 256 * 1024
@@ -84,34 +81,6 @@ class IngestConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class SpoolConfig:
-    """The bounded on disk buffer between ingest and shipping."""
-
-    directory: str = DEFAULT_SPOOL_DIR
-    budget_bytes: int = DEFAULT_SPOOL_BUDGET
-    segment_bytes: int = DEFAULT_SEGMENT_SIZE
-    reserve_ratio: float = DEFAULT_RESERVE_RATIO
-
-    def __post_init__(self) -> None:
-        if not is_absolute_path(self.directory):
-            raise ConfigError("spool directory must be absolute", detail=self.directory)
-        _require_positive("budget_bytes", self.budget_bytes)
-        _require_positive("segment_bytes", self.segment_bytes)
-        if self.segment_bytes > self.budget_bytes:
-            raise ConfigError(
-                "segment_bytes cannot exceed budget_bytes",
-                detail=f"{self.segment_bytes} > {self.budget_bytes}",
-            )
-        if not 0.0 <= self.reserve_ratio < 1.0:
-            raise ConfigError("reserve_ratio must be in [0, 1)", detail=str(self.reserve_ratio))
-
-    @property
-    def reserve_bytes(self) -> int:
-        """Room kept back so an eviction always has somewhere to write."""
-        return int(self.budget_bytes * self.reserve_ratio)
-
-
-@dataclass(frozen=True, slots=True)
 class ShipConfig:
     """The metered uplink to the estate collector."""
 
@@ -139,7 +108,7 @@ class SiteConfig:
 
     site: str
     ingest: IngestConfig = field(default_factory=IngestConfig)
-    spool: SpoolConfig = field(default_factory=SpoolConfig)
+    spool: SpoolSettings = field(default_factory=SpoolSettings)
     ship: ShipConfig = field(default_factory=ShipConfig)
     redact: RedactConfig = field(default_factory=RedactConfig)
     labels: dict[str, str] = field(default_factory=dict)
@@ -179,9 +148,11 @@ class SiteConfig:
             },
             "spool": {
                 "directory": self.spool.directory,
-                "budget_bytes": self.spool.budget_bytes,
-                "segment_bytes": self.spool.segment_bytes,
+                "budget": self.spool.budget_bytes,
+                "segment": self.spool.segment_bytes,
                 "reserve_ratio": self.spool.reserve_ratio,
+                "sync_every": self.spool.sync_every,
+                "compress": self.spool.compress,
             },
             "ship": {
                 "endpoint": self.ship.endpoint,
@@ -204,15 +175,6 @@ def ingest_from_mapping(raw: dict[str, Any]) -> IngestConfig:
         max_line_bytes=parse_bytes(raw.get("max_line_bytes", DEFAULT_MAX_LINE_BYTES)),
         units=tuple(raw.get("units", ())),
         multiline=tuple(rules_from_mapping(raw.get("multiline", {})).values()),
-    )
-
-
-def spool_from_mapping(raw: dict[str, Any]) -> SpoolConfig:
-    return SpoolConfig(
-        directory=str(raw.get("directory", DEFAULT_SPOOL_DIR)),
-        budget_bytes=parse_bytes(raw.get("budget", DEFAULT_SPOOL_BUDGET)),
-        segment_bytes=parse_bytes(raw.get("segment", DEFAULT_SEGMENT_SIZE)),
-        reserve_ratio=float(raw.get("reserve_ratio", DEFAULT_RESERVE_RATIO)),
     )
 
 
@@ -240,7 +202,7 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
     return SiteConfig(
         site=str(raw["site"]),
         ingest=ingest_from_mapping(raw.get("ingest", {})),
-        spool=spool_from_mapping(raw.get("spool", {})),
+        spool=spool_settings_from_mapping(raw.get("spool", {})),
         ship=ship_from_mapping(raw.get("ship", {})),
         redact=redact_from_mapping(raw.get("redact", {})),
         labels={str(k): str(v) for k, v in raw.get("labels", {}).items()},
