@@ -141,4 +141,4 @@ def test_dump_uses_block_style_so_support_can_read_it(tmp_path: Path) -> None:
 def test_a_minimal_config_only_needs_a_site(tmp_path: Path) -> None:
     cfg = load_site_config(write(tmp_path, "site: US-TX-0417\n"), environ={})
     assert cfg.ingest.log_root == "/var/log/containers"
-    assert cfg.ship.max_attempts == 5
+    assert cfg.ship.batch_records == 2000

@@ -20,6 +20,7 @@ from stanchion.errors import ConfigError
 from stanchion.identity import parse_site, parse_unit
 from stanchion.ingest.multiline import MultilineRule, rules_from_mapping
 from stanchion.redact.config import RedactConfig, redact_from_mapping
+from stanchion.ship.config import ShipSettings, ship_settings_from_mapping
 from stanchion.spool.config import SpoolSettings, spool_settings_from_mapping
 from stanchion.units import parse_bytes, parse_duration
 
@@ -27,11 +28,6 @@ DEFAULT_LOG_ROOT = "/var/log/containers"
 DEFAULT_POLL_INTERVAL = timedelta(seconds=2)
 DEFAULT_READ_CHUNK = 64 * 1024
 DEFAULT_MAX_LINE_BYTES = 1024 * 1024
-DEFAULT_ENDPOINT = "https://collector.invalid/v1/ingest"
-DEFAULT_MONTHLY_ALLOWANCE = 2 * 1000 * 1000 * 1000
-DEFAULT_BATCH_BYTES = 256 * 1024
-DEFAULT_ATTEMPT_TIMEOUT = timedelta(seconds=30)
-DEFAULT_MAX_ATTEMPTS = 5
 
 
 def _require_positive(name: str, value: int) -> int:
@@ -81,35 +77,13 @@ class IngestConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class ShipConfig:
-    """The metered uplink to the estate collector."""
-
-    endpoint: str = DEFAULT_ENDPOINT
-    monthly_allowance_bytes: int = DEFAULT_MONTHLY_ALLOWANCE
-    batch_bytes: int = DEFAULT_BATCH_BYTES
-    attempt_timeout: timedelta = DEFAULT_ATTEMPT_TIMEOUT
-    max_attempts: int = DEFAULT_MAX_ATTEMPTS
-
-    def __post_init__(self) -> None:
-        if not self.endpoint.startswith(("http://", "https://")):
-            raise ConfigError("endpoint must be an http url", detail=self.endpoint)
-        _require_positive("monthly_allowance_bytes", self.monthly_allowance_bytes)
-        _require_positive("batch_bytes", self.batch_bytes)
-        _require_positive("max_attempts", self.max_attempts)
-        if self.batch_bytes > self.monthly_allowance_bytes:
-            raise ConfigError("a single batch cannot exceed the monthly allowance")
-        if self.attempt_timeout <= timedelta(0):
-            raise ConfigError("attempt_timeout must be positive")
-
-
-@dataclass(frozen=True, slots=True)
 class SiteConfig:
     """Everything one forecourt controller needs to know about itself."""
 
     site: str
     ingest: IngestConfig = field(default_factory=IngestConfig)
     spool: SpoolSettings = field(default_factory=SpoolSettings)
-    ship: ShipConfig = field(default_factory=ShipConfig)
+    ship: ShipSettings = field(default_factory=ShipSettings)
     redact: RedactConfig = field(default_factory=RedactConfig)
     labels: dict[str, str] = field(default_factory=dict)
 
@@ -156,10 +130,13 @@ class SiteConfig:
             },
             "ship": {
                 "endpoint": self.ship.endpoint,
-                "monthly_allowance_bytes": self.ship.monthly_allowance_bytes,
-                "batch_bytes": self.ship.batch_bytes,
+                "monthly_allowance": self.ship.monthly_allowance_bytes,
+                "anchor_day": self.ship.anchor_day,
+                "batch": self.ship.batch_bytes,
+                "batch_records": self.ship.batch_records,
                 "attempt_timeout": self.ship.attempt_timeout.total_seconds(),
-                "max_attempts": self.ship.max_attempts,
+                "interval": self.ship.interval.total_seconds(),
+                "delete_acknowledged": self.ship.delete_acknowledged,
             },
             "labels": dict(self.labels),
         }
@@ -178,20 +155,6 @@ def ingest_from_mapping(raw: dict[str, Any]) -> IngestConfig:
     )
 
 
-def ship_from_mapping(raw: dict[str, Any]) -> ShipConfig:
-    return ShipConfig(
-        endpoint=str(raw.get("endpoint", DEFAULT_ENDPOINT)),
-        monthly_allowance_bytes=parse_bytes(
-            raw.get("monthly_allowance", DEFAULT_MONTHLY_ALLOWANCE)
-        ),
-        batch_bytes=parse_bytes(raw.get("batch", DEFAULT_BATCH_BYTES)),
-        attempt_timeout=parse_duration(
-            raw.get("attempt_timeout", DEFAULT_ATTEMPT_TIMEOUT.total_seconds())
-        ),
-        max_attempts=int(raw.get("max_attempts", DEFAULT_MAX_ATTEMPTS)),
-    )
-
-
 def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
     """Build a config from an already parsed mapping."""
     if "site" not in raw:
@@ -203,7 +166,7 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
         site=str(raw["site"]),
         ingest=ingest_from_mapping(raw.get("ingest", {})),
         spool=spool_settings_from_mapping(raw.get("spool", {})),
-        ship=ship_from_mapping(raw.get("ship", {})),
+        ship=ship_settings_from_mapping(raw.get("ship", {})),
         redact=redact_from_mapping(raw.get("redact", {})),
         labels={str(k): str(v) for k, v in raw.get("labels", {}).items()},
     )

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from stanchion.config import IngestConfig, ShipConfig, SiteConfig, site_from_mapping
+from stanchion.config import IngestConfig, SiteConfig, site_from_mapping
 from stanchion.errors import ConfigError
 
 
@@ -15,7 +15,7 @@ def test_defaults_build_a_usable_site() -> None:
     assert cfg.ingest.log_root == "/var/log/containers"
     assert cfg.spool.budget_bytes == 512 * 1024 * 1024
     assert cfg.spool.directory == "/var/lib/stanchion/spool"
-    assert cfg.ship.max_attempts == 5
+    assert cfg.ship.batch_records == 2000
 
 
 def test_site_id_is_normalized() -> None:
@@ -57,31 +57,6 @@ def test_ingest_rejects_a_malformed_unit_filter() -> None:
         IngestConfig(units=("pump bridge",))
 
 
-@pytest.mark.parametrize("endpoint", ["collector.invalid", "ftp://host/x", ""])
-def test_ship_rejects_a_non_http_endpoint(endpoint: str) -> None:
-    with pytest.raises(ConfigError, match="must be an http url"):
-        ShipConfig(endpoint=endpoint)
-
-
-def test_ship_accepts_plain_http_for_a_lab_collector() -> None:
-    assert ShipConfig(endpoint="http://10.0.0.9:8080/v1").endpoint.startswith("http://")
-
-
-def test_ship_rejects_a_batch_bigger_than_the_month() -> None:
-    with pytest.raises(ConfigError, match="cannot exceed the monthly allowance"):
-        ShipConfig(monthly_allowance_bytes=1024, batch_bytes=4096)
-
-
-def test_ship_rejects_zero_attempts() -> None:
-    with pytest.raises(ConfigError, match="max_attempts must be positive"):
-        ShipConfig(max_attempts=0)
-
-
-def test_ship_rejects_a_zero_timeout() -> None:
-    with pytest.raises(ConfigError, match="attempt_timeout must be positive"):
-        ShipConfig(attempt_timeout=timedelta(0))
-
-
 def test_labels_must_have_sane_keys() -> None:
     with pytest.raises(ConfigError, match="malformed label key"):
         SiteConfig(site="US-TX-0417", labels={"has space": "x"})
@@ -96,9 +71,8 @@ def test_as_dict_round_trips_through_the_mapping_builder() -> None:
     cfg = SiteConfig(site="US-TX-0417", labels={"brand": "x"})
     payload = cfg.as_dict()
     payload["ingest"]["poll_interval"] = f"{payload['ingest']['poll_interval']}s"
-    payload["ship"]["monthly_allowance"] = payload["ship"].pop("monthly_allowance_bytes")
-    payload["ship"]["batch"] = payload["ship"].pop("batch_bytes")
     payload["ship"]["attempt_timeout"] = f"{payload['ship']['attempt_timeout']}s"
+    payload["ship"]["interval"] = f"{payload['ship']['interval']}s"
     assert site_from_mapping(payload) == cfg
 
 
