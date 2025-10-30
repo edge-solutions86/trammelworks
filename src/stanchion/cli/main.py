@@ -97,6 +97,7 @@ def load_commands() -> None:
         clock_cmd,
         ingest_cmd,
         redact_cmd,
+        run_cmd,
         spool_cmd,
     )
 
