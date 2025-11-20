@@ -177,7 +177,7 @@ def test_the_payment_floor_keeps_a_record_a_site_wanted_gone() -> None:
 
 
 def test_the_mapping_builder_reads_written_durations() -> None:
-    policy = policy_from_mapping({"chatter": "3d", "payment": "1y" if False else "200d"})
+    policy = policy_from_mapping({"chatter": "3d", "payment": "200d"})
     assert policy.window_for("chatter") == timedelta(days=3)
     assert policy.window_for("payment") == timedelta(days=200)
 
