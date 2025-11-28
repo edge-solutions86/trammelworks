@@ -16,6 +16,7 @@ from datetime import timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
+from stanchion.archive.config import ArchiveSettings, archive_settings_from_mapping
 from stanchion.errors import ConfigError
 from stanchion.identity import parse_site, parse_unit
 from stanchion.ingest.multiline import MultilineRule, rules_from_mapping
@@ -85,11 +86,13 @@ class SiteConfig:
     spool: SpoolSettings = field(default_factory=SpoolSettings)
     ship: ShipSettings = field(default_factory=ShipSettings)
     redact: RedactConfig = field(default_factory=RedactConfig)
+    archive: ArchiveSettings = field(default_factory=ArchiveSettings)
     labels: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "site", parse_site(self.site))
         self.redact.check_site(self.site)
+        self.archive.check_against_spool(self.spool.directory)
         for key, value in self.labels.items():
             if not key or not key.replace("_", "").replace("-", "").isalnum():
                 raise ConfigError("malformed label key", detail=key)
@@ -138,6 +141,13 @@ class SiteConfig:
                 "interval": self.ship.interval.total_seconds(),
                 "delete_acknowledged": self.ship.delete_acknowledged,
             },
+            "archive": {
+                "enabled": self.archive.enabled,
+                "path": self.archive.path,
+                "max_bytes": self.archive.max_bytes,
+                "max_deletes": self.archive.max_deletes,
+                "sweep_every": self.archive.sweep_every.total_seconds(),
+            },
             "labels": dict(self.labels),
         }
 
@@ -159,7 +169,7 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
     """Build a config from an already parsed mapping."""
     if "site" not in raw:
         raise ConfigError("config has no site id")
-    unknown = set(raw) - {"site", "ingest", "spool", "ship", "redact", "labels"}
+    unknown = set(raw) - {"site", "ingest", "spool", "ship", "redact", "archive", "labels"}
     if unknown:
         raise ConfigError("unknown config section", detail=", ".join(sorted(unknown)))
     return SiteConfig(
@@ -168,5 +178,6 @@ def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
         spool=spool_settings_from_mapping(raw.get("spool", {})),
         ship=ship_settings_from_mapping(raw.get("ship", {})),
         redact=redact_from_mapping(raw.get("redact", {})),
+        archive=archive_settings_from_mapping(raw.get("archive", {})),
         labels={str(k): str(v) for k, v in raw.get("labels", {}).items()},
     )
