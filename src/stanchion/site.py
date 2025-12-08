@@ -12,6 +12,13 @@ a disk in a cabinet under a shop counter, and that disk gets pulled, imaged and
 posted to a lab when a controller dies. Cardholder data that reached the spool
 has left our control whatever the shipper does afterwards.
 
+**The archive gets the same redacted record the spool does.** It is written
+after the spool, not instead of it, and the two answer different questions: the
+spool is what the estate will eventually see, the archive is what this site can
+still answer from when the estate asks six weeks later. A record that failed to
+reach the spool is still archived, because a record we could not send is exactly
+the one somebody will come asking about.
+
 **Clock correction sits before redaction.** Correction reads the records of the
 time daemon to find out when the clock was fixed, and redaction rewrites message
 text. Running redaction first would mean a site rule could eat the very line the
@@ -27,6 +34,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from stanchion.archive.repository import Repository
+from stanchion.archive.schema import open_archive
+from stanchion.archive.sweeper import Sweeper, SweepReport
 from stanchion.clockfix.host import current_boot_identity
 from stanchion.clockfix.observe import SyncObserver
 from stanchion.clockfix.reconcile import Reconciler
@@ -65,6 +75,7 @@ class CollectReport:
 
     read: int = 0
     shipped_to_spool: int = 0
+    archived: int = 0
     redacted: int = 0
     syncs_seen: int = 0
     refused: int = 0
@@ -116,6 +127,8 @@ class Site:
     clock_store: ClockStore = field(init=False)
     meter_store: MeterStore = field(init=False)
     ack_store: AckStore = field(init=False)
+    archive: Repository | None = field(default=None, init=False)
+    sweeper: Sweeper | None = field(default=None, init=False)
 
     @classmethod
     def build(
@@ -184,8 +197,23 @@ class Site:
     def open(self) -> None:
         """Recover anything an interrupted run left and pick up the files."""
         self.spool.open()
+        self._open_archive()
         self.engine.refresh()
         self.events.info("site_open", site=self.config.site, files=len(self.engine.pipelines))
+
+    def _open_archive(self) -> None:
+        """Open the archive, unless this site is one that does without."""
+        settings = self.config.archive
+        if not settings.enabled:
+            return
+        connection = open_archive(settings.file)
+        self.archive = Repository(connection=connection, table=self.config.spool.table())
+        self.sweeper = Sweeper(
+            connection=connection,
+            policy=settings.retention,
+            max_deletes=settings.max_deletes,
+        )
+        self.events.info("archive_open", path=str(settings.file), records=self.archive.count())
 
     def collect(self) -> CollectReport:
         """Read what is new and put it in the spool."""
@@ -197,12 +225,17 @@ class Site:
         return report
 
     def _absorb(self, records: list[LogRecord], report: CollectReport) -> None:
+        # The archive is fed the CLEANED records, not the ones that came in.
+        # Handing it the originals would put cardholder data in the one file on
+        # the box that is designed to still be there in six months.
+        cleaned_all: list[LogRecord] = []
         for record in records:
             self.observer.look(record)
             corrected = self.reconciler.reconcile(record)
             cleaned = self.redactor.redact(corrected)
             if cleaned is not corrected:
                 report.redacted += 1
+            cleaned_all.append(cleaned)
             try:
                 self.spool.append(cleaned)
             except Exception as exc:  # noqa: BLE001 - reported, never raised on
@@ -211,7 +244,24 @@ class Site:
                 self.events.exception("spool_refused", exc, unit=record.unit)
                 continue
             report.shipped_to_spool += 1
+        report.archived += self._archive(cleaned_all)
         report.syncs_seen = self.observer.filed
+
+    def _archive(self, records: list[LogRecord]) -> int:
+        """Keep a local copy. A failure here is reported, never raised on.
+
+        The archive answers disputes and nothing on the forecourt stops if it
+        cannot be written. Losing the shipment would be a different matter, and
+        that path does not come through here.
+        """
+        if self.archive is None:
+            return 0
+        try:
+            return self.archive.add_all(records, self.clock.now())
+        except Exception as exc:  # noqa: BLE001 - reported, never raised on
+            self.metrics.incr("site_archive_failed")
+            self.events.exception("archive_write_failed", exc)
+            return 0
 
     def ship(self) -> ShipReport:
         """One pass of the uplink."""
@@ -223,6 +273,16 @@ class Site:
     def cycle(self) -> CycleReport:
         """Collect, then ship."""
         return CycleReport(collect=self.collect(), ship=self.ship())
+
+    def sweep(self) -> SweepReport:
+        """Apply retention to the archive."""
+        if self.sweeper is None:
+            return SweepReport()
+        report = self.sweeper.sweep(self.clock.now())
+        if report.deleted:
+            self.metrics.incr("archive_deleted", report.deleted)
+            self.events.info("archive_swept", deleted=report.deleted, held=report.held)
+        return report
 
     def persist(self) -> None:
         """Write the state that must survive a power cut."""

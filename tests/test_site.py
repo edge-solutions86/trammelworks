@@ -13,6 +13,7 @@ from stanchion.site import Site, build_transport, state_directory
 from stanchion.spool.config import SpoolSettings
 from stanchion.spool.priority import PriorityTable
 from stanchion.telemetry import Registry
+from stanchion.timestamps import NanoTime
 from tests.support.logfiles import SiteTree, cri_full, cri_line
 
 TS = "2025-03-04T12:00:00.000000000Z"
@@ -256,3 +257,125 @@ def test_every_line_written_reaches_the_collector_once(
     site.ship()
     messages = [item["message"] for batch in transport.received for item in batch.records]
     assert sorted(messages) == sorted(f"line {index}" for index in range(count))
+
+
+def archive_config(tree: SiteTree, tmp_path: Path, **over: object) -> SiteConfig:
+    from stanchion.archive.config import ArchiveSettings
+
+    settings: dict[str, object] = {
+        "archive": ArchiveSettings(path=(tmp_path / "archive" / "records.sqlite3").as_posix())
+    }
+    settings.update(over)
+    return config_for(tree, tmp_path, **settings)
+
+
+def archived_site(tree: SiteTree, tmp_path: Path, transport: MemoryTransport, **over: object):
+    clock = ManualClock()
+    clock.set_wall("2025-03-04T12:00:00Z")
+    return Site.build(
+        config=archive_config(tree, tmp_path, **over), transport=transport, clock=clock
+    )
+
+
+def test_a_record_is_archived(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "nozzle 1 lifted")])
+    site = archived_site(tree, tmp_path, MemoryTransport())
+    site.open()
+    report = site.collect()
+    assert report.archived == 1
+    assert site.archive is not None
+    assert site.archive.count() == 1
+
+
+def test_the_archived_record_is_the_redacted_one(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("payment-kernel", [cri_full(TS, f"pan={VISA}")])
+    site = archived_site(tree, tmp_path, MemoryTransport())
+    site.open()
+    site.collect()
+    assert site.archive is not None
+    found = site.archive.between(
+        NanoTime.parse("2025-03-04T00:00:00Z"), NanoTime.parse("2025-03-05T00:00:00Z")
+    )
+    assert VISA not in found[0].message
+    assert "411111******1111" in found[0].message
+
+
+def test_the_archive_file_lands_where_config_says(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "up")])
+    site = archived_site(tree, tmp_path, MemoryTransport())
+    site.open()
+    site.collect()
+    assert (tmp_path / "archive" / "records.sqlite3").exists()
+
+
+def test_a_disabled_archive_writes_nothing(tree: SiteTree, tmp_path: Path) -> None:
+    from stanchion.archive.config import ArchiveSettings
+
+    tree.write_cri("pump-bridge", [cri_full(TS, "up")])
+    site = Site.build(
+        config=config_for(tree, tmp_path, archive=ArchiveSettings(enabled=False)),
+        transport=MemoryTransport(),
+        clock=ManualClock(),
+    )
+    site.open()
+    assert site.collect().archived == 0
+    assert site.archive is None
+
+
+def test_the_same_line_is_archived_once_across_restarts(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "only once")])
+    first = archived_site(tree, tmp_path, MemoryTransport())
+    first.open()
+    first.collect()
+    first.close()
+    second = archived_site(tree, tmp_path, MemoryTransport())
+    second.open()
+    second.collect()
+    assert second.archive is not None
+    assert second.archive.count() == 1
+
+
+def test_a_sweep_on_a_disabled_archive_is_empty(tree: SiteTree, tmp_path: Path) -> None:
+    from stanchion.archive.config import ArchiveSettings
+
+    site = Site.build(
+        config=config_for(tree, tmp_path, archive=ArchiveSettings(enabled=False)),
+        transport=MemoryTransport(),
+        clock=ManualClock(),
+    )
+    site.open()
+    assert site.sweep().deleted == 0
+
+
+def test_a_sweep_leaves_a_fresh_record_alone(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "up")])
+    site = archived_site(tree, tmp_path, MemoryTransport())
+    site.open()
+    site.collect()
+    assert site.sweep().deleted == 0
+    assert site.archive is not None
+    assert site.archive.count() == 1
+
+
+def tiny_spool(tmp_path: Path) -> SpoolSettings:
+    """A spool too small to hold one framed record, so every write is refused."""
+    return SpoolSettings(
+        directory=(tmp_path / "spool").as_posix(), budget_bytes=200, segment_bytes=180
+    )
+
+
+def test_a_record_that_missed_the_spool_is_still_archived(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "a line long enough not to fit " * 6)])
+    site = archived_site(tree, tmp_path, MemoryTransport(), spool=tiny_spool(tmp_path))
+    site.open()
+    report = site.collect()
+    assert report.refused == 1
+    assert report.shipped_to_spool == 0
+    assert report.archived == 1
+
+
+def test_a_spool_refusal_does_not_stop_the_pass(tree: SiteTree, tmp_path: Path) -> None:
+    tree.write_cri("pump-bridge", [cri_full(TS, "x" * 200), cri_full(TS, "y" * 200)])
+    site = archived_site(tree, tmp_path, MemoryTransport(), spool=tiny_spool(tmp_path))
+    site.open()
+    assert site.collect().refused == 2
