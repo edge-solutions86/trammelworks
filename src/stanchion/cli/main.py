@@ -96,6 +96,7 @@ def load_commands() -> None:
     from stanchion.cli import (  # noqa: F401
         clock_cmd,
         ingest_cmd,
+        query_cmd,
         redact_cmd,
         run_cmd,
         spool_cmd,
