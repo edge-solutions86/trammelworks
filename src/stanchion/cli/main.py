@@ -98,6 +98,7 @@ def load_commands() -> None:
         ingest_cmd,
         query_cmd,
         redact_cmd,
+        report_cmd,
         run_cmd,
         spool_cmd,
     )
