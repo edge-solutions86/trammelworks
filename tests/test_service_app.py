@@ -145,16 +145,13 @@ def test_the_summary_route_reports(config: SiteConfig, filled: None) -> None:
 
 
 def test_the_summary_carries_the_problems(config: SiteConfig, filled: None) -> None:
-    assert found_problems(get(config, "/summary").payload)
-
-
-def found_problems(payload: dict) -> list:  # type: ignore[type-arg]
-    return payload["problems"]
+    # A site with no log root is following nothing, which the summary flags.
+    assert get(config, "/summary").payload["problems"]
 
 
 def test_records_come_back_as_json(config: SiteConfig, filled: None) -> None:
     found = get(config, "/records")
-    assert found.count_ok if hasattr(found, "count_ok") else True
+    assert found.status == 200
     assert found.payload["count"] == 3
     assert found.payload["records"][0]["message"] == "auth approved"
 
