@@ -101,6 +101,7 @@ def load_commands() -> None:
         redact_cmd,
         report_cmd,
         run_cmd,
+        serve_cmd,
         spool_cmd,
     )
 
