@@ -284,6 +284,28 @@ class Site:
             self.events.info("archive_swept", deleted=report.deleted, held=report.held)
         return report
 
+    def snapshot(self) -> dict[str, int]:
+        """Every counter the site keeps, in one mapping.
+
+        Gathered rather than stored, so it is always the live numbers. The
+        nightly summary and the end to end tests both read this, which is the
+        point: a test that asserts on the same numbers an operator sees cannot
+        drift away from what the operator is told.
+        """
+        found = dict(self.metrics.snapshot())
+        found["spool_limit"] = self.config.spool.budget_bytes
+        found["spool_used"] = self.spool.usage().used
+        found["ship_meter_used"] = self.shipper.meter.used_bytes
+        found["ship_meter_allowance"] = self.shipper.meter.allowance_bytes
+        found["ship_outstanding"] = self.shipper.acks.outstanding
+        found["redact_records"] = self.redactor.audit.records
+        found["redact_changed"] = self.redactor.audit.changed
+        found["redact_removed"] = self.redactor.audit.total_hits
+        found["clock_syncs"] = self.observer.filed
+        if self.archive is not None:
+            found["archive_records"] = self.archive.count()
+        return dict(sorted(found.items()))
+
     def persist(self) -> None:
         """Write the state that must survive a power cut."""
         self.meter_store.save(self.shipper.meter)
