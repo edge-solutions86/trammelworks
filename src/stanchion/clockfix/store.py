@@ -13,15 +13,13 @@ them means the file grows for the life of the box.
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from stanchion.clockfix.session import BootSession, SessionLedger, SyncEvent
 from stanchion.errors import ConfigError
+from stanchion.jsonstore import JsonStore
 from stanchion.timestamps import NanoTime
 
 FORMAT_VERSION = 1
@@ -104,51 +102,34 @@ class ClockStore:
 
     directory: Path
     keep_sessions: int = DEFAULT_KEEP_SESSIONS
-    corrupt: int = 0
+    store: JsonStore = field(init=False)
 
     def __post_init__(self) -> None:
         self.directory = Path(self.directory)
         if self.keep_sessions < 1:
             raise ConfigError("keep_sessions must be at least 1", detail=str(self.keep_sessions))
+        self.store = JsonStore(path=self.directory / FILENAME, indent=1)
 
     @property
     def path(self) -> Path:
-        return self.directory / FILENAME
+        return self.store.path
+
+    @property
+    def corrupt(self) -> int:
+        return self.store.corrupt
 
     def load(self) -> SessionLedger:
         """Read the ledger, treating a damaged one as an empty one."""
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return SessionLedger()
-        except OSError as exc:
-            raise ConfigError("clock ledger unreadable", detail=str(exc)) from exc
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            self.corrupt += 1
-            return SessionLedger()
-        if not isinstance(payload, dict):
-            self.corrupt += 1
+        payload = self.store.load()
+        if payload is None:
             return SessionLedger()
         try:
             return ledger_from_dict(payload)
         except ConfigError:
-            self.corrupt += 1
+            self.store.corrupt += 1
             return SessionLedger()
 
     def save(self, ledger: SessionLedger) -> Path:
         """Prune, then write the whole ledger atomically."""
         ledger.forget_all_but(self.keep_sessions)
-        self.directory.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=self.directory, suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-                json.dump(ledger_to_dict(ledger), stream, sort_keys=True, indent=1)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
-        return self.path
+        return self.store.save(ledger_to_dict(ledger))

@@ -17,16 +17,14 @@ the target and renamed over it.
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from stanchion.errors import IngestError
 from stanchion.ingest.tail import FileIdentity
+from stanchion.jsonstore import JsonStore
 from stanchion.timestamps import NanoTime
 
 SUFFIX = ".ckpt"
@@ -101,22 +99,15 @@ class CheckpointStore:
     def _target(self, key: str) -> Path:
         return self.directory / f"{check_key(key)}{SUFFIX}"
 
+    def _store(self, key: str) -> JsonStore:
+        return JsonStore(path=self._target(key), version=FORMAT_VERSION)
+
     def load(self, key: str) -> Checkpoint | None:
         """Read a checkpoint, treating a damaged one as absent."""
-        target = self._target(key)
-        try:
-            text = target.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None
-        except OSError as exc:
-            raise IngestError("checkpoint unreadable", detail=str(exc)) from exc
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            self.corrupt += 1
-            return None
-        if not isinstance(payload, dict):
-            self.corrupt += 1
+        store = self._store(key)
+        payload = store.load()
+        self.corrupt += store.corrupt
+        if payload is None:
             return None
         try:
             return Checkpoint.from_dict(payload)
@@ -128,19 +119,7 @@ class CheckpointStore:
         """Write a checkpoint atomically."""
         if checkpoint.offset < 0:
             raise IngestError("cannot checkpoint a negative offset")
-        target = self._target(checkpoint.key)
-        self.directory.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=self.directory, suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-                json.dump(checkpoint.as_dict(), stream, sort_keys=True)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
-        return target
+        return self._store(checkpoint.key).save(checkpoint.as_dict())
 
     def forget(self, key: str) -> bool:
         """Drop a checkpoint. Returns whether there was one."""

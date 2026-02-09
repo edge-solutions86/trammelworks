@@ -20,14 +20,12 @@ were never delivered.
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from stanchion.errors import ShipError
+from stanchion.jsonstore import JsonStore
 
 FORMAT_VERSION = 1
 FILENAME = "acks.json"
@@ -146,29 +144,23 @@ class AckStore:
     """The ledger on disk, written whole and atomically."""
 
     directory: Path
-    corrupt: int = 0
+    store: JsonStore = field(init=False)
 
     def __post_init__(self) -> None:
         self.directory = Path(self.directory)
+        self.store = JsonStore(path=self.directory / FILENAME, version=FORMAT_VERSION, indent=1)
 
     @property
     def path(self) -> Path:
-        return self.directory / FILENAME
+        return self.store.path
+
+    @property
+    def corrupt(self) -> int:
+        return self.store.corrupt
 
     def load(self) -> AckLedger:
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return AckLedger()
-        except OSError as exc:
-            raise ShipError("ack ledger unreadable", detail=str(exc)) from exc
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            self.corrupt += 1
-            return AckLedger()
-        if not isinstance(payload, dict) or payload.get("version") != FORMAT_VERSION:
-            self.corrupt += 1
+        payload = self.store.load()
+        if payload is None:
             return AckLedger()
         ledger = AckLedger()
         try:
@@ -176,24 +168,11 @@ class AckStore:
                 mark = Watermark.from_dict(raw)
                 ledger.marks[mark.segment] = mark
         except ShipError:
-            self.corrupt += 1
+            self.store.corrupt += 1
             return AckLedger()
         return ledger
 
     def save(self, ledger: AckLedger) -> Path:
-        self.directory.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "version": FORMAT_VERSION,
-            "marks": [ledger.marks[name].as_dict() for name in sorted(ledger.marks)],
-        }
-        handle, temporary = tempfile.mkstemp(dir=self.directory, suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-                json.dump(payload, stream, sort_keys=True, indent=1)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
-        return self.path
+        return self.store.save(
+            {"marks": [ledger.marks[name].as_dict() for name in sorted(ledger.marks)]}
+        )

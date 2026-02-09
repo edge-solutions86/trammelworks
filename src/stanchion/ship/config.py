@@ -12,15 +12,13 @@ safe, because nothing downstream would notice.
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from stanchion.errors import ConfigError, ShipError
+from stanchion.jsonstore import JsonStore
 from stanchion.ship.backoff import BackoffPolicy
 from stanchion.ship.batch import BatchLimits
 from stanchion.ship.meter import DEFAULT_FLOORS, Meter
@@ -127,14 +125,21 @@ class MeterStore:
     """The meter's state on disk."""
 
     directory: Path
-    corrupt: int = 0
+    store: JsonStore = field(init=False)
 
     def __post_init__(self) -> None:
         self.directory = Path(self.directory)
+        self.store = JsonStore(
+            path=self.directory / METER_FILENAME, version=FORMAT_VERSION, indent=1
+        )
 
     @property
     def path(self) -> Path:
-        return self.directory / METER_FILENAME
+        return self.store.path
+
+    @property
+    def corrupt(self) -> int:
+        return self.store.corrupt
 
     def load(self, settings: ShipSettings) -> Meter:
         """Read the meter, or start a fresh one if there is nothing usable.
@@ -144,46 +149,24 @@ class MeterStore:
         is only there to remember what has been spent.
         """
         fresh = settings.meter()
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return fresh
-        except OSError as exc:
-            raise ShipError("meter state unreadable", detail=str(exc)) from exc
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            self.corrupt += 1
-            return fresh
-        if not isinstance(payload, dict) or payload.get("version") != FORMAT_VERSION:
-            self.corrupt += 1
+        payload = self.store.load()
+        if payload is None:
             return fresh
         try:
             fresh.used_bytes = int(payload["used_bytes"])
             fresh.started_at = NanoTime.parse(str(payload["started_at"]))
             fresh.rollovers = int(payload.get("rollovers", 0))
         except (KeyError, TypeError, ValueError):
-            self.corrupt += 1
+            self.store.corrupt += 1
             return settings.meter()
         return fresh
 
     def save(self, meter: Meter) -> Path:
-        self.directory.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "version": FORMAT_VERSION,
-            "used_bytes": meter.used_bytes,
-            "started_at": meter.started_at.isoformat(),
-            "rollovers": meter.rollovers,
-            "allowance_bytes": meter.allowance_bytes,
-        }
-        handle, temporary = tempfile.mkstemp(dir=self.directory, suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-                json.dump(payload, stream, sort_keys=True, indent=1)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
-        return self.path
+        return self.store.save(
+            {
+                "used_bytes": meter.used_bytes,
+                "started_at": meter.started_at.isoformat(),
+                "rollovers": meter.rollovers,
+                "allowance_bytes": meter.allowance_bytes,
+            }
+        )
