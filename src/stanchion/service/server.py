@@ -33,6 +33,9 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9787
 LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 
+#: Nothing here reads a body, so a large one is drained only up to this.
+MAX_BODY_BYTES = 64 * 1024
+
 
 @dataclass(slots=True)
 class ServerSettings:
@@ -57,6 +60,21 @@ class ServerSettings:
     @property
     def loopback_only(self) -> bool:
         return self.host in LOOPBACK
+
+
+def _drain(handler: BaseHTTPRequestHandler) -> None:
+    """Read and discard any request body before answering.
+
+    A body left unread means the client is still writing when the socket
+    closes, and it sees a connection reset instead of the refusal we sent.
+    Nothing here uses a body, but it still has to be taken off the wire.
+    """
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError:
+        return
+    if length > 0:
+        handler.rfile.read(min(length, MAX_BODY_BYTES))
 
 
 @dataclass(slots=True)
@@ -98,6 +116,7 @@ class ServiceHost:
 
     def respond(self, handler: BaseHTTPRequestHandler, method: str) -> None:
         """Turn one handler callback into a request and a response."""
+        _drain(handler)
         request = Request.of(handler.path, headers=dict(handler.headers.items()), method=method)
         answer = self.dispatch(request)
         body = answer.body()

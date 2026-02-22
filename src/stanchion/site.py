@@ -224,6 +224,18 @@ class Site:
         self._absorb(records, report)
         return report
 
+    def absorb(self, records: list[LogRecord]) -> CollectReport:
+        """Put records that came from somewhere other than the tailer through.
+
+        The backfill reads rotated files and hands them here, so they go through
+        exactly the same correction, redaction, spool and archive path as the
+        live ones. A second route into the spool that skipped redaction is the
+        one bug this system cannot afford.
+        """
+        report = CollectReport(read=len(records))
+        self._absorb(records, report)
+        return report
+
     def _absorb(self, records: list[LogRecord], report: CollectReport) -> None:
         # The archive is fed the CLEANED records, not the ones that came in.
         # Handing it the originals would put cardholder data in the one file on

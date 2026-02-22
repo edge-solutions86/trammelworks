@@ -94,6 +94,7 @@ def load_commands() -> None:
     and the alternative is a registry nobody remembers to add to.
     """
     from stanchion.cli import (  # noqa: F401
+        backfill_cmd,
         clock_cmd,
         doctor_cmd,
         hold_cmd,

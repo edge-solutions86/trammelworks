@@ -198,3 +198,26 @@ def test_a_post_is_refused_over_the_wire(config: SiteConfig) -> None:
             built.server.shutdown()
         built.close()
         thread.join(timeout=5)
+
+
+def test_a_body_is_drained_so_the_client_sees_the_refusal(config: SiteConfig) -> None:
+    built = host(config)
+    thread = running(built)
+    try:
+        address = built.address
+        request = urllib.request.Request(
+            f"http://{address[0]}:{address[1]}/health",
+            data=b"x" * 4096,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as answer:
+                status = answer.status
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+        assert status == 405
+    finally:
+        if built.server is not None:
+            built.server.shutdown()
+        built.close()
+        thread.join(timeout=5)
