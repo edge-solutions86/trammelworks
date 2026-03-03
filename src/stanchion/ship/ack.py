@@ -69,6 +69,21 @@ class Watermark:
         self.acked += count
         return self.acked
 
+    def resize(self, total: int) -> None:
+        """Shrink the segment under this watermark and start it again.
+
+        Compaction is the only caller. Everything acknowledged has left the
+        file, so the count of what has been acknowledged of what is left is
+        zero, and it is zero rather than carried across because the records the
+        old number referred to are not there any more.
+        """
+        if total < 0:
+            raise ShipError("a segment cannot hold a negative number of records")
+        if total > self.total:
+            raise ShipError("a sealed segment cannot grow", detail=f"{self.total} then {total}")
+        self.total = total
+        self.acked = 0
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "segment": self.segment,
@@ -104,11 +119,25 @@ class AckLedger:
         if found is None:
             found = Watermark(segment=segment, total=total)
             self.marks[segment] = found
-        elif found.total != total:
+        elif total < found.total:
+            # A compaction that landed and did not get as far as writing the
+            # ledger looks exactly like this. Take the file's word for it and
+            # send what is there again, which is what at least once delivery
+            # already promises.
+            found.resize(total)
+        elif total > found.total:
             raise ShipError(
-                "a segment changed size under the watermark",
+                "a segment grew under the watermark",
                 detail=f"{segment}: {found.total} then {total}",
             )
+        return found
+
+    def resize(self, segment: str, total: int) -> Watermark:
+        """Tell the ledger a segment has been rewritten shorter."""
+        found = self.marks.get(segment)
+        if found is None:
+            raise ShipError("resized a segment nobody is shipping", detail=segment)
+        found.resize(total)
         return found
 
     def acknowledge(self, segment: str, count: int) -> Watermark:

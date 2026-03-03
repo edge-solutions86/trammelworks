@@ -78,11 +78,43 @@ def test_the_ledger_starts_a_watermark_on_first_sight() -> None:
     assert ledger.mark(SEGMENT, 10) is mark
 
 
-def test_a_segment_that_changes_size_is_refused() -> None:
+def test_a_segment_that_grows_is_refused() -> None:
     ledger = AckLedger()
     ledger.mark(SEGMENT, 10)
-    with pytest.raises(ShipError, match="changed size under the watermark"):
+    with pytest.raises(ShipError, match="grew under the watermark"):
         ledger.mark(SEGMENT, 11)
+
+
+def test_a_segment_that_shrank_is_taken_as_compacted() -> None:
+    ledger = AckLedger()
+    ledger.mark(SEGMENT, 10)
+    ledger.acknowledge(SEGMENT, 6)
+    mark = ledger.mark(SEGMENT, 4)
+    assert (mark.total, mark.acked) == (4, 0)
+
+
+def test_resizing_starts_the_watermark_again() -> None:
+    ledger = AckLedger()
+    ledger.mark(SEGMENT, 10)
+    ledger.acknowledge(SEGMENT, 4)
+    assert ledger.resize(SEGMENT, 6).acked == 0
+
+
+def test_resizing_a_segment_nobody_ships_is_refused() -> None:
+    with pytest.raises(ShipError, match="nobody is shipping"):
+        AckLedger().resize(SEGMENT, 2)
+
+
+def test_a_watermark_cannot_be_resized_upwards() -> None:
+    mark = Watermark(segment=SEGMENT, total=4)
+    with pytest.raises(ShipError, match="cannot grow"):
+        mark.resize(9)
+
+
+def test_a_watermark_cannot_be_resized_negative() -> None:
+    mark = Watermark(segment=SEGMENT, total=4)
+    with pytest.raises(ShipError, match="negative"):
+        mark.resize(-1)
 
 
 def test_acknowledging_advances_the_right_segment() -> None:
