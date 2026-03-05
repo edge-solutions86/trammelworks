@@ -21,6 +21,7 @@ from stanchion.errors import ConfigError, ShipError
 from stanchion.jsonstore import JsonStore
 from stanchion.ship.backoff import BackoffPolicy
 from stanchion.ship.batch import BatchLimits
+from stanchion.ship.compact import DEFAULT_MIN_FRACTION, DEFAULT_MIN_RECLAIM
 from stanchion.ship.meter import DEFAULT_FLOORS, Meter
 from stanchion.timestamps import NanoTime
 from stanchion.units import parse_bytes, parse_duration
@@ -47,6 +48,9 @@ class ShipSettings:
     interval: timedelta = DEFAULT_INTERVAL
     floors: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_FLOORS))
     delete_acknowledged: bool = True
+    compact: bool = True
+    compact_min_reclaim_bytes: int = DEFAULT_MIN_RECLAIM
+    compact_min_fraction: float = DEFAULT_MIN_FRACTION
 
     def __post_init__(self) -> None:
         if not self.endpoint.startswith(("http://", "https://", "file://")):
@@ -57,6 +61,16 @@ class ShipSettings:
             raise ConfigError("ship interval must be positive")
         if self.batch_bytes > self.monthly_allowance_bytes:
             raise ConfigError("a single batch cannot exceed the monthly allowance")
+        if self.compact_min_reclaim_bytes < 0:
+            raise ConfigError(
+                "compact_min_reclaim cannot be negative",
+                detail=str(self.compact_min_reclaim_bytes),
+            )
+        if not 0.0 <= self.compact_min_fraction <= 1.0:
+            raise ConfigError(
+                "compact_min_fraction is a fraction of a segment",
+                detail=str(self.compact_min_fraction),
+            )
         try:
             self.meter()
         except ShipError as exc:
@@ -99,6 +113,9 @@ def ship_settings_from_mapping(raw: dict[str, Any]) -> ShipSettings:
         "interval",
         "floors",
         "delete_acknowledged",
+        "compact",
+        "compact_min_reclaim",
+        "compact_min_fraction",
     }
     unknown = set(raw) - known
     if unknown:
@@ -117,6 +134,9 @@ def ship_settings_from_mapping(raw: dict[str, Any]) -> ShipSettings:
         interval=parse_duration(raw.get("interval", 300)),
         floors={str(name): float(value) for name, value in floors_raw.items()},
         delete_acknowledged=bool(raw.get("delete_acknowledged", True)),
+        compact=bool(raw.get("compact", True)),
+        compact_min_reclaim_bytes=parse_bytes(raw.get("compact_min_reclaim", DEFAULT_MIN_RECLAIM)),
+        compact_min_fraction=float(raw.get("compact_min_fraction", DEFAULT_MIN_FRACTION)),
     )
 
 

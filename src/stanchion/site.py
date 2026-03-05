@@ -49,6 +49,7 @@ from stanchion.ingest.engine import IngestEngine
 from stanchion.records import LogRecord
 from stanchion.redact.engine import Redactor
 from stanchion.ship.ack import AckStore
+from stanchion.ship.compact import CompactionResult, Compactor, clear_sidecars
 from stanchion.ship.config import MeterStore
 from stanchion.ship.session import Shipper, ShipReport
 from stanchion.ship.transport import FileTransport, HttpTransport, Transport
@@ -196,6 +197,9 @@ class Site:
 
     def open(self) -> None:
         """Recover anything an interrupted run left and pick up the files."""
+        stray = clear_sidecars(self.config.spool.path)
+        if stray:
+            self.events.warn("compaction_sidecars_cleared", count=len(stray))
         self.spool.open()
         self._open_archive()
         self.engine.refresh()
@@ -279,8 +283,33 @@ class Site:
         """One pass of the uplink."""
         self.spool.seal_all()
         report = self.shipper.run_once()
+        self.compact()
         self.persist()
         return report
+
+    def compact(self) -> CompactionResult:
+        """Give back the disk that acknowledged records are still holding.
+
+        After the pass, not before. A segment the shipper just worked on is the
+        one most likely to be part acknowledged, and doing it here means the
+        rewrite happens while nothing is reading, rather than in the middle of
+        cutting batches out of the same file.
+        """
+        settings = self.config.ship
+        if not settings.compact:
+            return CompactionResult()
+        compactor = Compactor(
+            directory=self.config.spool.path,
+            ledger=self.shipper.acks,
+            min_reclaim=settings.compact_min_reclaim_bytes,
+            min_fraction=settings.compact_min_fraction,
+            events=self.events,
+            metrics=self.metrics,
+        )
+        result = compactor.run(self.spool.segments(), pinned=frozenset(self.shipper.pinned))
+        if result.segments:
+            self.events.info("spool_compacted", segments=result.segments, freed=result.reclaimed)
+        return result
 
     def cycle(self) -> CycleReport:
         """Collect, then ship."""
