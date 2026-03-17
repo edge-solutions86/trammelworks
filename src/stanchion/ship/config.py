@@ -23,6 +23,7 @@ from stanchion.ship.backoff import BackoffPolicy
 from stanchion.ship.batch import BatchLimits
 from stanchion.ship.compact import DEFAULT_MIN_FRACTION, DEFAULT_MIN_RECLAIM
 from stanchion.ship.meter import DEFAULT_FLOORS, Meter
+from stanchion.ship.signing import SigningKey, read_key
 from stanchion.timestamps import NanoTime
 from stanchion.units import parse_bytes, parse_duration
 
@@ -48,6 +49,8 @@ class ShipSettings:
     interval: timedelta = DEFAULT_INTERVAL
     floors: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_FLOORS))
     delete_acknowledged: bool = True
+    signing_key_file: str = ""
+    signing_key_id: str = ""
     compact: bool = True
     compact_min_reclaim_bytes: int = DEFAULT_MIN_RECLAIM
     compact_min_fraction: float = DEFAULT_MIN_FRACTION
@@ -61,6 +64,13 @@ class ShipSettings:
             raise ConfigError("ship interval must be positive")
         if self.batch_bytes > self.monthly_allowance_bytes:
             raise ConfigError("a single batch cannot exceed the monthly allowance")
+        if bool(self.signing_key_file) != bool(self.signing_key_id):
+            # Half a signing setup is worse than none: the batches go out
+            # unsigned and the commissioning sheet says they are signed.
+            raise ConfigError(
+                "signing needs both a key file and a key id",
+                detail=f"file {self.signing_key_file!r}, id {self.signing_key_id!r}",
+            )
         if self.compact_min_reclaim_bytes < 0:
             raise ConfigError(
                 "compact_min_reclaim cannot be negative",
@@ -85,6 +95,23 @@ class ShipSettings:
         if not self.to_file:
             raise ConfigError("this endpoint is not a directory", detail=self.endpoint)
         return Path(self.endpoint.removeprefix("file://"))
+
+    @property
+    def signs(self) -> bool:
+        return bool(self.signing_key_file)
+
+    def signing_key(self) -> SigningKey | None:
+        """Read the key off disk, or None when this site does not sign.
+
+        Read here rather than held in the settings, so a config that is passed
+        around, logged or written back out never carries the secret with it.
+        """
+        if not self.signs:
+            return None
+        try:
+            return read_key(Path(self.signing_key_file), self.signing_key_id)
+        except ShipError as exc:
+            raise ConfigError(exc.message, detail=exc.detail) from exc
 
     def limits(self) -> BatchLimits:
         return BatchLimits(max_bytes=self.batch_bytes, max_records=self.batch_records)
@@ -113,6 +140,8 @@ def ship_settings_from_mapping(raw: dict[str, Any]) -> ShipSettings:
         "interval",
         "floors",
         "delete_acknowledged",
+        "signing_key_file",
+        "signing_key_id",
         "compact",
         "compact_min_reclaim",
         "compact_min_fraction",
@@ -134,6 +163,8 @@ def ship_settings_from_mapping(raw: dict[str, Any]) -> ShipSettings:
         interval=parse_duration(raw.get("interval", 300)),
         floors={str(name): float(value) for name, value in floors_raw.items()},
         delete_acknowledged=bool(raw.get("delete_acknowledged", True)),
+        signing_key_file=str(raw.get("signing_key_file", "")),
+        signing_key_id=str(raw.get("signing_key_id", "")),
         compact=bool(raw.get("compact", True)),
         compact_min_reclaim_bytes=parse_bytes(raw.get("compact_min_reclaim", DEFAULT_MIN_RECLAIM)),
         compact_min_fraction=float(raw.get("compact_min_fraction", DEFAULT_MIN_FRACTION)),

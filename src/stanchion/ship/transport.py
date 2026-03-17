@@ -34,9 +34,13 @@ from typing import Any, Protocol
 from stanchion.errors import ShipError
 from stanchion.ship.backoff import Outcome
 from stanchion.ship.batch import Batch
+from stanchion.ship.signing import Signer
 from stanchion.version import user_agent
 
 DEFAULT_TIMEOUT = 30.0
+
+SIGNATURE_HEADER = "X-Stanchion-Signature"
+SIGNATURE_SUFFIX = ".sig"
 
 RETRYABLE_STATUS = frozenset({408, 425, 500, 502, 503, 504})
 THROTTLED_STATUS = 429
@@ -125,9 +129,17 @@ class NullTransport:
 
 @dataclass(slots=True)
 class FileTransport:
-    """Writes each batch into a directory, named by its batch id."""
+    """Writes each batch into a directory, named by its batch id.
+
+    The signature goes beside it in its own file rather than inside the body.
+    Detached is what makes it useful here: the batch is the same bytes whether
+    it went over the modem or onto a stick, so the collector checks one thing
+    either way, and a directory that lost its ``.sig`` files is obviously
+    unsigned rather than quietly unverifiable.
+    """
 
     directory: Path
+    signer: Signer | None = None
     written: int = 0
 
     def send(self, batch: Batch) -> Response:
@@ -136,6 +148,10 @@ class FileTransport:
             self.directory.mkdir(parents=True, exist_ok=True)
             target = self.directory / f"{batch.batch_id}.json"
             target.write_bytes(body)
+            if self.signer is not None:
+                beside = target.with_name(target.name + SIGNATURE_SUFFIX)
+                header = self.signer.header_for(batch, body)
+                beside.write_text(header + "\n", encoding="utf-8")
         except OSError as exc:
             return Response(outcome=Outcome.RETRYABLE, message=str(exc))
         self.written += 1
@@ -149,6 +165,7 @@ class HttpTransport:
     endpoint: str
     timeout: float = DEFAULT_TIMEOUT
     token: str = ""
+    signer: Signer | None = None
     opener: Any = None
 
     def __post_init__(self) -> None:
@@ -157,7 +174,7 @@ class HttpTransport:
         if self.timeout <= 0:
             raise ShipError("timeout must be positive", detail=str(self.timeout))
 
-    def _request(self, body: bytes) -> urllib.request.Request:
+    def _request(self, batch: Batch, body: bytes) -> urllib.request.Request:
         headers = {
             "Content-Type": "application/json",
             "User-Agent": user_agent(),
@@ -165,11 +182,13 @@ class HttpTransport:
         }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        if self.signer is not None:
+            headers[SIGNATURE_HEADER] = self.signer.header_for(batch, body)
         return urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST")
 
     def send(self, batch: Batch) -> Response:
         body = batch.encode()
-        request = self._request(body)
+        request = self._request(batch, body)
         opener = self.opener if self.opener is not None else urllib.request.urlopen
         try:
             with opener(request, timeout=self.timeout) as answer:

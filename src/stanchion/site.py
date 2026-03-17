@@ -52,6 +52,7 @@ from stanchion.ship.ack import AckStore
 from stanchion.ship.compact import CompactionResult, Compactor, clear_sidecars
 from stanchion.ship.config import MeterStore
 from stanchion.ship.session import Shipper, ShipReport
+from stanchion.ship.signing import Signer
 from stanchion.ship.transport import FileTransport, HttpTransport, Transport
 from stanchion.spool.store import Spool
 from stanchion.telemetry import Registry
@@ -98,15 +99,25 @@ class CycleReport:
         return self.collect.idle and self.ship.idle
 
 
-def build_transport(config: SiteConfig) -> Transport:
+def build_signer(config: SiteConfig, clock: Clock | None = None) -> Signer | None:
+    """The signer this site's config asks for, if it asks for one."""
+    key = config.ship.signing_key()
+    if key is None:
+        return None
+    return Signer(key=key, clock=clock if clock is not None else SystemClock())
+
+
+def build_transport(config: SiteConfig, clock: Clock | None = None) -> Transport:
     """The transport this site's endpoint asks for."""
     settings = config.ship
+    signer = build_signer(config, clock)
     if settings.to_file:
-        return FileTransport(directory=settings.file_directory)
+        return FileTransport(directory=settings.file_directory, signer=signer)
     return HttpTransport(
         endpoint=settings.endpoint,
         timeout=settings.attempt_timeout.total_seconds(),
         token=settings.token,
+        signer=signer,
     )
 
 
@@ -140,10 +151,11 @@ class Site:
         events: EventLog | None = None,
         metrics: Registry | None = None,
     ) -> Site:
+        chosen = clock if clock is not None else SystemClock()
         return cls(
             config=config,
-            transport=transport if transport is not None else build_transport(config),
-            clock=clock if clock is not None else SystemClock(),
+            transport=transport if transport is not None else build_transport(config, chosen),
+            clock=chosen,
             events=events if events is not None else null_log(),
             metrics=metrics if metrics is not None else Registry(),
         )
