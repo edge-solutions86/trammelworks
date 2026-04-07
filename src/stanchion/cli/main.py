@@ -96,6 +96,7 @@ def load_commands() -> None:
     from stanchion.cli import (  # noqa: F401
         backfill_cmd,
         clock_cmd,
+        count_cmd,
         doctor_cmd,
         hold_cmd,
         ingest_cmd,
