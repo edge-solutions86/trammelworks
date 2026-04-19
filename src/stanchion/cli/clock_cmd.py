@@ -17,11 +17,10 @@ from pathlib import Path, PurePosixPath
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, loaded
 from stanchion.clockfix.drift import DriftModel
 from stanchion.clockfix.session import BootSession
 from stanchion.clockfix.store import ClockStore
-from stanchion.errors import StanchionError
 from stanchion.timestamps import NS_PER_MS, NS_PER_SECOND
 
 STATE_DIRNAME = "state"
@@ -55,11 +54,7 @@ def describe_session(session: BootSession, index: int) -> list[str]:
 @click.pass_obj
 def clock_command(obj: Context, all_boots: bool) -> None:
     """Show the boot sessions and the clock corrections seen on this site."""
-    try:
-        config = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
+    config = loaded(obj)
     store = ClockStore(directory=Path(_state_dir(config.spool.directory)))
     ledger = store.load()
     if not ledger.order:

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, reporting
 from stanchion.errors import StanchionError
 from stanchion.redact.engine import Redactor
 
@@ -75,12 +75,9 @@ def run_pass(redactor: Redactor, lines: list[str]) -> list[LineReport]:
 @click.pass_obj
 def redact_command(obj: Context, source: str | None, explain: bool, quiet: bool) -> None:
     """Run the site's redaction pass over some lines and report what went."""
-    try:
+    with reporting():
         config = obj.load()
         lines = read_lines(source)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if not config.redact.enabled:
         click.echo("redaction is disabled on this site, nothing was checked", err=True)
     redactor = Redactor(
@@ -88,11 +85,8 @@ def redact_command(obj: Context, source: str | None, explain: bool, quiet: bool)
         keep_first=config.redact.keep_first,
         keep_last=config.redact.keep_last,
     )
-    try:
+    with reporting():
         reports = run_pass(redactor, lines)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     for report in reports:
         if not quiet:
             click.echo(report.text)

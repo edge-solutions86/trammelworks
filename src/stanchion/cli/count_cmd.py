@@ -20,9 +20,8 @@ from __future__ import annotations
 import click
 
 from stanchion.archive.schema import open_archive
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, fail, reporting
 from stanchion.clocks import SystemClock
-from stanchion.errors import StanchionError
 from stanchion.query.aggregate import GROUPABLE, Group, Tally, count_by, count_over_time
 from stanchion.query.execute import DEFAULT_SCAN_CEILING
 from stanchion.query.parser import parse_query
@@ -74,26 +73,18 @@ def count_command(
     """Count matching records, grouped by a field or over time."""
     if group is not None and bucket is not None:
         fail("group by a field or over time, not both at once")
-        return
-    try:
+    with reporting():
         config = obj.load()
         query = parse_query(filter_text, SystemClock().now())
         width = None if bucket is None else parse_duration(bucket)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if not config.archive.enabled:
         fail("this site keeps no archive, so there is nothing to count")
-        return
-    try:
+    with reporting():
         connection = open_archive(config.archive.file, read_only=True)
         if width is not None:
             tally = count_over_time(connection, query, bucket=width, ceiling=ceiling)
         else:
             tally = count_by(connection, query, group or "unit", ceiling=ceiling)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if not tally.groups:
         click.echo("nothing matched")
         return

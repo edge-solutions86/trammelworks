@@ -21,8 +21,7 @@ from dataclasses import dataclass
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
-from stanchion.errors import StanchionError
+from stanchion.cli.main import Context, cli, fail, reporting
 from stanchion.site import CycleReport, Site
 
 DEFAULT_CYCLES = 1
@@ -66,14 +65,10 @@ def run_command(obj: Context, cycles: int, forever: bool, interval: float | None
     """Collect from the container logs and ship, once or repeatedly."""
     if cycles < 1:
         fail("cycles must be at least 1")
-        return
-    try:
+    with reporting():
         config = obj.load()
         site = Site.build(config=config)
         site.open()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     wait = interval if interval is not None else config.ship.interval.total_seconds()
     totals = RunTotals()
     try:
@@ -113,13 +108,9 @@ def ship_command(obj: Context, passes: int) -> None:
     """Drain the spool to the collector without collecting anything new."""
     if passes < 1:
         fail("passes must be at least 1")
-        return
-    try:
+    with reporting():
         site = Site.build(config=obj.load())
         site.open()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     total_records = 0
     total_bytes = 0
     for _ in range(passes):

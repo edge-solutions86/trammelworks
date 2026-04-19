@@ -15,8 +15,7 @@ from __future__ import annotations
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
-from stanchion.errors import StanchionError
+from stanchion.cli.main import Context, cli, loaded, reporting
 from stanchion.spool.budget import measure, report
 from stanchion.spool.evict import evictable_bytes, plan_eviction
 from stanchion.spool.reader import read_segment
@@ -31,11 +30,7 @@ from stanchion.units import format_bytes, parse_bytes
 @click.pass_obj
 def spool_command(obj: Context, segments: bool, plan_size: str | None, verify: bool) -> None:
     """Report on the on disk spool."""
-    try:
-        config = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
+    config = loaded(obj)
     settings = config.spool
     table = settings.table()
     found = list_segments(settings.path)
@@ -78,11 +73,8 @@ def _verify(found: list) -> None:  # type: ignore[type-arg]
 
 
 def _plan(found: list, table: object, plan_size: str) -> None:  # type: ignore[type-arg]
-    try:
+    with reporting():
         wanted = parse_bytes(plan_size)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     plan = plan_eviction(found, table, wanted)  # type: ignore[arg-type]
     click.echo(f"to free {format_bytes(wanted)}:")
     for item in plan.victims:

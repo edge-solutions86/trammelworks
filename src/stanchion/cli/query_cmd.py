@@ -17,9 +17,8 @@ import click
 
 from stanchion.archive.repository import StoredRecord
 from stanchion.archive.schema import open_archive
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, fail, loaded, reporting
 from stanchion.clocks import SystemClock
-from stanchion.errors import StanchionError
 from stanchion.query.execute import DEFAULT_SCAN_CEILING, explain, search
 from stanchion.query.parser import parse_query
 
@@ -52,27 +51,16 @@ def query_command(
     ceiling: int,
 ) -> None:
     """Search the local archive with a filter expression."""
-    try:
-        config = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
+    config = loaded(obj)
     if not config.archive.enabled:
         fail("this site keeps no archive, so there is nothing to query")
-        return
-    try:
+    with reporting():
         query = parse_query(filter_text, SystemClock().now())
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if show_plan:
         click.echo(explain(query), err=True)
-    try:
+    with reporting():
         connection = open_archive(config.archive.file, read_only=True)
         found = search(connection, query, ceiling=ceiling)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if count_only:
         click.echo(str(found.count))
     else:

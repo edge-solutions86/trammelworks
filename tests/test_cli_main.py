@@ -5,7 +5,18 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from stanchion.cli.main import EXIT_CONFIG, EXIT_OK, cli, run
+from stanchion.cli.main import (
+    EXIT_CONFIG,
+    EXIT_FAILED,
+    EXIT_OK,
+    Context,
+    cli,
+    fail,
+    loaded,
+    reporting,
+    run,
+)
+from stanchion.errors import ConfigError, QueryError, ShipError
 from stanchion.version import VERSION
 
 SITE_YAML = """
@@ -105,3 +116,62 @@ def test_run_returns_a_code_for_a_bad_option() -> None:
 def test_verbose_is_accepted_on_the_group(runner: CliRunner, config: Path) -> None:
     result = runner.invoke(cli, ["--config", str(config), "-v", "config", "--check"])
     assert result.exit_code == EXIT_OK
+
+
+def test_a_guard_lets_a_clean_run_through() -> None:
+    seen = []
+    with reporting():
+        seen.append("ran")
+    assert seen == ["ran"]
+
+
+def test_a_guard_turns_an_error_into_one_line(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as caught:
+        with reporting():
+            raise ConfigError("no such file", detail="/etc/stanchion/site.yaml")
+    assert caught.value.code == EXIT_FAILED
+    assert "stanchion.config: no such file" in capsys.readouterr().err
+
+
+def test_a_guard_carries_the_exit_code_it_was_given() -> None:
+    with pytest.raises(SystemExit) as caught:
+        with reporting(EXIT_CONFIG):
+            raise ConfigError("bad")
+    assert caught.value.code == EXIT_CONFIG
+
+
+def test_a_guard_does_not_swallow_anything_else() -> None:
+    with pytest.raises(ValueError):
+        with reporting():
+            raise ValueError("not ours")
+
+
+def test_every_message_carries_the_error_code(capsys: pytest.CaptureFixture[str]) -> None:
+    # The whole reason for one guard: a support call says paste me what it
+    # says, and what it says has to name the code whichever command ran.
+    for error in (ConfigError("a"), QueryError("b"), ShipError("c")):
+        with pytest.raises(SystemExit), reporting():
+            raise error
+    printed = capsys.readouterr().err.splitlines()
+    assert [line.split(":")[0] for line in printed] == [
+        "stanchion.config",
+        "stanchion.query",
+        "stanchion.ship",
+    ]
+
+
+def test_loading_a_good_config_gives_it_back(config: Path) -> None:
+    assert loaded(Context(config_path=config, verbose=False)).site == "US-TX-0417"
+
+
+def test_loading_a_missing_config_stops(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        loaded(Context(config_path=tmp_path / "absent.yaml", verbose=False))
+    assert caught.value.code == EXIT_CONFIG
+
+
+def test_failing_never_returns(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as caught:
+        fail("gone wrong")
+    assert caught.value.code == EXIT_FAILED
+    assert capsys.readouterr().err.strip() == "gone wrong"

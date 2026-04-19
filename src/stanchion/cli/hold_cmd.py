@@ -17,7 +17,7 @@ import click
 from stanchion.archive.retention import Hold, format_retention
 from stanchion.archive.schema import open_archive
 from stanchion.archive.sweeper import HoldStore, Sweeper
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, fail, reporting
 from stanchion.clocks import SystemClock
 from stanchion.errors import StanchionError
 from stanchion.query.parser import parse_instant
@@ -40,11 +40,8 @@ def hold_group() -> None:
 @click.pass_obj
 def hold_list(obj: Context) -> None:
     """Show every hold currently in force."""
-    try:
+    with reporting():
         _, connection = _archive_or_fail(obj, read_only=True)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     holds = HoldStore(connection=connection).all()
     if not holds:
         click.echo("no holds")
@@ -69,7 +66,7 @@ def _window(hold: Hold) -> str:
 def hold_place(obj: Context, name: str, reason: str, from_text: str, until_text: str) -> None:
     """Stop retention deleting records, by name and reason."""
     now = SystemClock().now()
-    try:
+    with reporting():
         _, connection = _archive_or_fail(obj)
         hold = Hold(
             name=name,
@@ -78,9 +75,6 @@ def hold_place(obj: Context, name: str, reason: str, from_text: str, until_text:
             covers_from=_instant(from_text, now),
             covers_until=_instant(until_text, now),
         )
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     HoldStore(connection=connection).place(hold)
     click.echo(f"held {name}")
 
@@ -94,11 +88,8 @@ def _instant(text: str | None, now: NanoTime) -> NanoTime | None:
 @click.pass_obj
 def hold_lift(obj: Context, name: str) -> None:
     """Remove a hold, letting retention have those records again."""
-    try:
+    with reporting():
         _, connection = _archive_or_fail(obj)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if HoldStore(connection=connection).lift(name):
         click.echo(f"lifted {name}")
         return
@@ -110,11 +101,8 @@ def hold_lift(obj: Context, name: str) -> None:
 @click.pass_obj
 def sweep_command(obj: Context, dry_run: bool) -> None:
     """Apply the retention policy to the archive."""
-    try:
+    with reporting():
         config, connection = _archive_or_fail(obj)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     policy = config.archive.retention
     click.echo(policy.describe())
     now = SystemClock().now()

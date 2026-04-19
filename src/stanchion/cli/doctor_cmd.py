@@ -15,9 +15,8 @@ import json
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, reporting
 from stanchion.doctor import Level, run_checks
-from stanchion.errors import StanchionError
 
 EXIT_HEALTHY = 0
 EXIT_BROKEN = 1
@@ -31,11 +30,8 @@ EXIT_WARNED = 2
 @click.pass_obj
 def doctor_command(obj: Context, strict: bool, as_json: bool, quiet: bool) -> None:
     """Check that this site will still be working next week."""
-    try:
+    with reporting(EXIT_BROKEN):
         config = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}", EXIT_BROKEN)
-        return
     report = run_checks(config)
     if as_json:
         click.echo(

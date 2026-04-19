@@ -19,7 +19,7 @@ import click
 
 from stanchion.archive.repository import Repository
 from stanchion.archive.schema import open_archive
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, fail, loaded, reporting
 from stanchion.clocks import SystemClock
 from stanchion.errors import StanchionError
 from stanchion.query.execute import search
@@ -56,23 +56,16 @@ def report_command(
     raw_time: bool,
 ) -> None:
     """Write a report of archived records."""
-    try:
+    with reporting():
         config = obj.load()
         fmt = parse_format(format_name)
         options = RenderOptions(fmt=fmt, width=width, header=not no_header, raw_time=raw_time)
         query = parse_query(filter_text, SystemClock().now())
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if not config.archive.enabled:
         fail("this site keeps no archive, so there is nothing to report on")
-        return
-    try:
+    with reporting():
         connection = open_archive(config.archive.file, read_only=True)
         found = search(connection, query)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     body = render(found.records, options)
     if out_path is None:
         click.echo(body)
@@ -90,11 +83,7 @@ def report_command(
 @click.pass_obj
 def summary_command(obj: Context, as_json: bool) -> None:
     """Write the nightly summary for this site."""
-    try:
-        config = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
+    config = loaded(obj)
     now = SystemClock().now()
     built = Summary(site=config.site, at=now)
     _fill_spool(built, config)

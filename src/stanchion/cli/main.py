@@ -13,8 +13,11 @@ caught and rendered as one line with the stable error code in it.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 import click
 
@@ -41,10 +44,40 @@ class Context:
         return load_site_config(self.config_path)
 
 
-def fail(message: str, code: int = EXIT_FAILED) -> None:
-    """Print one line to stderr and stop."""
+def fail(message: str, code: int = EXIT_FAILED) -> NoReturn:
+    """Print one line to stderr and stop.
+
+    Typed as never returning, which is what it does, and that is worth more
+    than it sounds: every caller used to write a ``return`` after it to tell
+    the reader control stopped there, and every one of those was dead code
+    that the type checker could not see was dead.
+    """
     click.echo(message, err=True)
     raise SystemExit(code)
+
+
+@contextmanager
+def reporting(code: int = EXIT_FAILED) -> Iterator[None]:
+    """Turn any expected failure raised inside into one line and a stop.
+
+    Every command used to carry its own copy of this. They were not quite
+    identical either, which is the real argument for one of them: two of the
+    copies printed the message without the error code, and a support call that
+    says "paste me what it says" is worth much less when what it says depends
+    on which subcommand was run.
+    """
+    try:
+        yield
+    except StanchionError as exc:
+        fail(f"{exc.code}: {exc}", code)
+
+
+def loaded(obj: Context, code: int = EXIT_CONFIG) -> SiteConfig:
+    """The site config, or one line and a stop."""
+    try:
+        return obj.load()
+    except StanchionError as exc:
+        fail(f"{exc.code}: {exc}", code)
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -69,15 +102,11 @@ def cli(ctx: click.Context, config_path: Path, verbose: bool) -> None:
 @click.pass_obj
 def config_command(obj: Context, check: bool) -> None:
     """Load the site config and print it back as it was understood."""
-    try:
-        loaded = obj.load()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}", EXIT_CONFIG)
-        return
+    found = loaded(obj)
     if check:
-        click.echo(f"ok {loaded.site}")
+        click.echo(f"ok {found.site}")
         return
-    click.echo(dump_site_config(loaded), nl=False)
+    click.echo(dump_site_config(found), nl=False)
 
 
 @cli.command("version")

@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, fail, reporting
 from stanchion.clocks import SystemClock
-from stanchion.errors import StanchionError
 from stanchion.ingest.engine import IngestEngine
 from stanchion.records import LogRecord
 
@@ -37,13 +36,10 @@ def render(record: LogRecord, full: bool) -> str:
 @click.pass_obj
 def discover_command(obj: Context, skipped: bool) -> None:
     """List the container log files this site would follow."""
-    try:
+    with reporting():
         config = obj.load()
         engine = IngestEngine(config=config, clock=SystemClock())
         found = engine.refresh()
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     click.echo(f"log root {config.ingest.log_root}")
     for info in found.follow:
         detection = engine.detections.get(info.path)
@@ -66,8 +62,7 @@ def tail_command(obj: Context, passes: int, full: bool, units: tuple[str, ...]) 
     """Run the ingest pipeline for a few passes and print what comes out."""
     if passes < 1:
         fail("passes must be at least 1")
-        return
-    try:
+    with reporting():
         config = obj.load()
         engine = IngestEngine(config=config, clock=SystemClock())
         engine.refresh()
@@ -84,8 +79,5 @@ def tail_command(obj: Context, passes: int, full: bool, units: tuple[str, ...]) 
                 continue
             total += 1
             click.echo(render(record, full))
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     if obj.verbose:
         click.echo(f"{total} records from {len(engine.detections)} files", err=True)

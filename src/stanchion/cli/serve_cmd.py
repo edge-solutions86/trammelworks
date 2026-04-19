@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
+from stanchion.cli.main import Context, cli, reporting
 from stanchion.clocks import SystemClock
-from stanchion.errors import StanchionError
 from stanchion.eventlog import EventLog, Level
 from stanchion.service.server import DEFAULT_HOST, DEFAULT_PORT, ServerSettings, ServiceHost
 
@@ -36,14 +35,11 @@ def serve_command(
     obj: Context, host: str, port: int, token: str, any_interface: bool, once: bool
 ) -> None:
     """Serve the site's status and archive over HTTP, read only."""
-    try:
+    with reporting():
         config = obj.load()
         settings = ServerSettings(
             host=host, port=port, token=token, allow_any_interface=any_interface
         )
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     events = EventLog(minimum=Level.DEBUG if obj.verbose else Level.INFO, clock=SystemClock())
     service = ServiceHost(config=config, settings=settings, events=events)
     server = service.build()

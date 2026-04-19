@@ -15,8 +15,7 @@ from pathlib import Path
 
 import click
 
-from stanchion.cli.main import Context, cli, fail
-from stanchion.errors import StanchionError
+from stanchion.cli.main import Context, cli, reporting
 from stanchion.ingest.backfill import DEFAULT_MAX_BYTES, Backfiller
 from stanchion.ingest.discover import discover
 from stanchion.paths import LogPathInfo
@@ -33,13 +32,10 @@ def backfill_command(
     obj: Context, units: tuple[str, ...], dry_run: bool, max_bytes: str | None
 ) -> None:
     """Read the rotated log files into the spool and the archive."""
-    try:
+    with reporting():
         config = obj.load()
         cap = DEFAULT_MAX_BYTES if max_bytes is None else parse_bytes(max_bytes)
         found = discover(Path(config.ingest.log_root), config.ingest.units)
-    except StanchionError as exc:
-        fail(f"{exc.code}: {exc}")
-        return
     wanted = [info for info in found.follow if not units or info.unit in units]
     if not wanted:
         click.echo("no followed files, so nothing to backfill")
