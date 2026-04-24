@@ -30,6 +30,7 @@ from typing import Any
 
 from stanchion.archive.retention import RetentionPolicy, policy_from_mapping
 from stanchion.errors import ConfigError
+from stanchion.sections import check_keys, section
 from stanchion.units import format_bytes, parse_bytes
 
 DEFAULT_PATH = "/var/lib/stanchion/archive/records.sqlite3"
@@ -91,22 +92,22 @@ class ArchiveSettings:
 
 def archive_settings_from_mapping(raw: dict[str, Any]) -> ArchiveSettings:
     """Build the section from the config block."""
-    unknown = set(raw) - {
-        "enabled",
-        "path",
-        "max_bytes",
-        "max_deletes",
-        "sweep_every",
-        "trim_to_cap",
-        "vacuum",
-        "vacuum_min_reclaim",
-        "retention",
-    }
-    if unknown:
-        raise ConfigError("unknown archive key", detail=", ".join(sorted(unknown)))
-    retention_raw = raw.get("retention", {})
-    if not isinstance(retention_raw, dict):
-        raise ConfigError("the retention section must be a mapping")
+    check_keys(
+        raw,
+        {
+            "enabled",
+            "path",
+            "max_bytes",
+            "max_deletes",
+            "sweep_every",
+            "trim_to_cap",
+            "vacuum",
+            "vacuum_min_reclaim",
+            "retention",
+        },
+        "archive",
+    )
+    retention_raw = section(raw, "retention", "archive")
     from stanchion.units import parse_duration
 
     return ArchiveSettings(

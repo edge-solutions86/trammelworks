@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from stanchion.errors import ConfigError, SpoolError
+from stanchion.sections import check_keys, section
 from stanchion.spool.budget import Budget
 from stanchion.spool.priority import PriorityTable, table_from_mapping
 from stanchion.spool.segment import DEFAULT_SEGMENT_BYTES
@@ -83,20 +84,20 @@ class SpoolSettings:
 
 def spool_settings_from_mapping(raw: dict[str, Any]) -> SpoolSettings:
     """Build the settings from the config block."""
-    unknown = set(raw) - {
-        "directory",
-        "budget",
-        "segment",
-        "reserve_ratio",
-        "sync_every",
-        "compress",
-        "priority",
-    }
-    if unknown:
-        raise ConfigError("unknown spool key", detail=", ".join(sorted(unknown)))
-    priority_raw = raw.get("priority")
-    if priority_raw is not None and not isinstance(priority_raw, dict):
-        raise ConfigError("the priority section must be a mapping")
+    check_keys(
+        raw,
+        {
+            "directory",
+            "budget",
+            "segment",
+            "reserve_ratio",
+            "sync_every",
+            "compress",
+            "priority",
+        },
+        "spool",
+    )
+    priority_raw = None if raw.get("priority") is None else section(raw, "priority", "spool")
     return SpoolSettings(
         directory=str(raw.get("directory", DEFAULT_DIRECTORY)),
         budget_bytes=parse_bytes(raw.get("budget", DEFAULT_BUDGET)),

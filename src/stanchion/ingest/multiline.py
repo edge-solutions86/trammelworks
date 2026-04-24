@@ -27,6 +27,7 @@ from dataclasses import dataclass, field, replace
 
 from stanchion.errors import ConfigError
 from stanchion.records import LogRecord, Stream
+from stanchion.sections import check_keys
 
 DEFAULT_MAX_LINES = 200
 JOIN_WITH = "\n"
@@ -139,9 +140,7 @@ def rules_from_mapping(raw: dict[str, object]) -> dict[str, MultilineRule]:
     for unit, body in raw.items():
         if not isinstance(body, dict):
             raise ConfigError("a multiline rule must be a mapping", detail=unit)
-        unknown = set(body) - {"start", "continuation", "max_lines", "negate"}
-        if unknown:
-            raise ConfigError("unknown multiline key", detail=", ".join(sorted(unknown)))
+        check_keys(body, {"start", "continuation", "max_lines", "negate"}, "multiline")
         start = body.get("start")
         continuation = body.get("continuation")
         out[unit] = MultilineRule(

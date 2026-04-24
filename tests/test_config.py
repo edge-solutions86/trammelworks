@@ -97,7 +97,7 @@ def test_mapping_builder_needs_a_site() -> None:
 
 
 def test_mapping_builder_rejects_an_unknown_section() -> None:
-    with pytest.raises(ConfigError, match="unknown config section"):
+    with pytest.raises(ConfigError, match="unknown config key"):
         site_from_mapping({"site": "US-TX-0417", "spoool": {}})
 
 
@@ -178,5 +178,5 @@ def test_two_multiline_rules_for_one_unit_are_refused() -> None:
 
 
 def test_an_unknown_top_level_section_is_still_refused() -> None:
-    with pytest.raises(ConfigError, match="unknown config section"):
+    with pytest.raises(ConfigError, match="unknown config key"):
         site_from_mapping({"site": "US-TX-0417", "redactt": {}})

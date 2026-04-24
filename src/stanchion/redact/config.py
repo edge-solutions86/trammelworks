@@ -18,6 +18,7 @@ from typing import Any
 
 from stanchion.errors import ConfigError
 from stanchion.redact.rules import Rule, rules_from_mapping
+from stanchion.sections import check_keys, section
 
 DEFAULT_KEEP_FIRST = 6
 DEFAULT_KEEP_LAST = 4
@@ -93,12 +94,8 @@ def summarize(config: RedactConfig) -> RedactSummary:
 
 def redact_from_mapping(raw: dict[str, Any]) -> RedactConfig:
     """Build the section, refusing anything it does not recognise."""
-    unknown = set(raw) - {"enabled", "keep_first", "keep_last", "rules"}
-    if unknown:
-        raise ConfigError("unknown redact key", detail=", ".join(sorted(unknown)))
-    rules_raw = raw.get("rules", {})
-    if not isinstance(rules_raw, dict):
-        raise ConfigError("redact rules must be a mapping")
+    check_keys(raw, {"enabled", "keep_first", "keep_last", "rules"}, "redact")
+    rules_raw = section(raw, "rules", "redact")
     return RedactConfig(
         enabled=bool(raw.get("enabled", True)),
         keep_first=int(raw.get("keep_first", DEFAULT_KEEP_FIRST)),

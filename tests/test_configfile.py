@@ -112,7 +112,7 @@ def test_env_overlay_still_validates(tmp_path: Path) -> None:
 
 
 def test_load_rejects_an_unknown_section(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="unknown config section"):
+    with pytest.raises(ConfigError, match="unknown config key"):
         load_site_config(write(tmp_path, "site: US-TX-0417\nshipp: {}\n"), environ={})
 
 

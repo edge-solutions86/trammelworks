@@ -19,6 +19,7 @@ from typing import Any
 
 from stanchion.errors import ConfigError, ShipError
 from stanchion.jsonstore import JsonStore
+from stanchion.sections import check_keys, section
 from stanchion.ship.backoff import BackoffPolicy
 from stanchion.ship.batch import BatchLimits
 from stanchion.ship.compact import DEFAULT_MIN_FRACTION, DEFAULT_MIN_RECLAIM
@@ -146,12 +147,8 @@ def ship_settings_from_mapping(raw: dict[str, Any]) -> ShipSettings:
         "compact_min_reclaim",
         "compact_min_fraction",
     }
-    unknown = set(raw) - known
-    if unknown:
-        raise ConfigError("unknown ship key", detail=", ".join(sorted(unknown)))
-    floors_raw = raw.get("floors", DEFAULT_FLOORS)
-    if not isinstance(floors_raw, dict):
-        raise ConfigError("ship floors must be a mapping")
+    check_keys(raw, known, "ship")
+    floors_raw = DEFAULT_FLOORS if raw.get("floors") is None else section(raw, "floors", "ship")
     return ShipSettings(
         endpoint=str(raw.get("endpoint", DEFAULT_ENDPOINT)),
         token=str(raw.get("token", "")),

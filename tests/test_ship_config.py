@@ -94,7 +94,7 @@ def test_the_mapping_builder_rejects_an_unknown_key() -> None:
 
 
 def test_the_mapping_builder_needs_floors_to_be_a_mapping() -> None:
-    with pytest.raises(ConfigError, match="floors must be a mapping"):
+    with pytest.raises(ConfigError, match="the floors section must be a mapping"):
         ship_settings_from_mapping({"floors": ["payment"]})
 
 

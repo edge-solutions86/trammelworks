@@ -21,6 +21,7 @@ from stanchion.errors import ConfigError
 from stanchion.identity import parse_site, parse_unit
 from stanchion.ingest.multiline import MultilineRule, rules_from_mapping
 from stanchion.redact.config import RedactConfig, redact_from_mapping
+from stanchion.sections import check_keys, require, section
 from stanchion.ship.config import ShipSettings, ship_settings_from_mapping
 from stanchion.spool.config import SpoolSettings, spool_settings_from_mapping
 from stanchion.units import parse_bytes, parse_duration
@@ -29,6 +30,9 @@ DEFAULT_LOG_ROOT = "/var/log/containers"
 DEFAULT_POLL_INTERVAL = timedelta(seconds=2)
 DEFAULT_READ_CHUNK = 64 * 1024
 DEFAULT_MAX_LINE_BYTES = 1024 * 1024
+
+
+SECTIONS = {"site", "ingest", "spool", "ship", "redact", "archive", "labels"}
 
 
 def _require_positive(name: str, value: int) -> int:
@@ -167,17 +171,14 @@ def ingest_from_mapping(raw: dict[str, Any]) -> IngestConfig:
 
 def site_from_mapping(raw: dict[str, Any]) -> SiteConfig:
     """Build a config from an already parsed mapping."""
-    if "site" not in raw:
-        raise ConfigError("config has no site id")
-    unknown = set(raw) - {"site", "ingest", "spool", "ship", "redact", "archive", "labels"}
-    if unknown:
-        raise ConfigError("unknown config section", detail=", ".join(sorted(unknown)))
+    site = require(raw, "site", "config", "site id")
+    check_keys(raw, SECTIONS, "config")
     return SiteConfig(
-        site=str(raw["site"]),
-        ingest=ingest_from_mapping(raw.get("ingest", {})),
-        spool=spool_settings_from_mapping(raw.get("spool", {})),
-        ship=ship_settings_from_mapping(raw.get("ship", {})),
-        redact=redact_from_mapping(raw.get("redact", {})),
-        archive=archive_settings_from_mapping(raw.get("archive", {})),
+        site=str(site),
+        ingest=ingest_from_mapping(section(raw, "ingest", "config")),
+        spool=spool_settings_from_mapping(section(raw, "spool", "config")),
+        ship=ship_settings_from_mapping(section(raw, "ship", "config")),
+        redact=redact_from_mapping(section(raw, "redact", "config")),
+        archive=archive_settings_from_mapping(section(raw, "archive", "config")),
         labels={str(k): str(v) for k, v in raw.get("labels", {}).items()},
     )

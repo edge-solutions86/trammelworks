@@ -125,5 +125,5 @@ def test_the_archive_section_appears_in_as_dict() -> None:
 
 
 def test_an_unknown_top_level_section_is_still_refused() -> None:
-    with pytest.raises(ConfigError, match="unknown config section"):
+    with pytest.raises(ConfigError, match="unknown config key"):
         site_from_mapping({"site": "US-TX-0417", "archiv": {}})

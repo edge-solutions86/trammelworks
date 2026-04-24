@@ -105,7 +105,7 @@ def test_the_mapping_builder_rejects_an_unknown_key() -> None:
 
 
 def test_the_mapping_builder_needs_rules_to_be_a_mapping() -> None:
-    with pytest.raises(ConfigError, match="rules must be a mapping"):
+    with pytest.raises(ConfigError, match="the rules section must be a mapping"):
         redact_from_mapping({"rules": ["driver"]})
 
 
