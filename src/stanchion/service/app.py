@@ -26,6 +26,7 @@ from stanchion.archive.repository import Repository
 from stanchion.archive.schema import open_archive
 from stanchion.config import SiteConfig
 from stanchion.errors import StanchionError
+from stanchion.query.cursor import parse_cursor
 from stanchion.query.execute import search
 from stanchion.query.parser import parse_query
 from stanchion.report.summary import Summary
@@ -136,17 +137,21 @@ class Service:
         query = parse_query(request.one("filter"), self.now)
         if query.limit is None or query.limit > limit:
             query = type(query)(where=query.where, limit=limit)
+        after = request.one("after")
         connection = open_archive(self.config.archive.file, read_only=True)
-        found = search(connection, query)
-        return Response(
-            status=200,
-            payload={
-                "site": self.config.site,
-                "count": found.count,
-                "truncated": found.truncated,
-                "records": [_record(item) for item in found.records],
-            },
-        )
+        found = search(connection, query, after=parse_cursor(after) if after else None)
+        payload: dict[str, Any] = {
+            "site": self.config.site,
+            "count": found.count,
+            "truncated": found.truncated,
+            "records": [_record(item) for item in found.records],
+        }
+        if found.next_cursor is not None:
+            # Only when there might be more. A caller that follows the cursor
+            # while one is offered and stops when it is not needs no count
+            # arithmetic to know when it has the lot.
+            payload["next"] = found.next_cursor.encode()
+        return Response(status=200, payload=payload)
 
     def units(self, request: Request) -> Response:
         if not self.config.archive.enabled or not self.config.archive.file.exists():

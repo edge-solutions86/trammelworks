@@ -33,6 +33,7 @@ from typing import Any
 from stanchion.errors import QueryError
 from stanchion.query.ast import LABEL_PREFIX as LABEL
 from stanchion.query.ast import And, Compare, InSet, Node, Not, Op, Or, Query, Since, Until
+from stanchion.query.cursor import Cursor, cursor_params, cursor_sql
 
 #: Filter field to archive column. ``message`` is deliberately not indexed:
 #: a substring search cannot use an index anyway and pretending otherwise would
@@ -77,6 +78,7 @@ class Plan:
     params: list[Any] = field(default_factory=list)
     limit: int | None = None
     residual: Node | None = None
+    after: Cursor | None = None
 
     @property
     def needs_post_filter(self) -> bool:
@@ -86,6 +88,24 @@ class Plan:
     def fully_pushed(self) -> bool:
         return self.residual is None
 
+    @property
+    def full_where(self) -> str:
+        """The filter and the cursor together.
+
+        The cursor is not part of the filter the user typed and it is not
+        optional either: it is what makes the next page the next page. Joining
+        them here means no caller can build the statement and forget it.
+        """
+        if self.after is None:
+            return self.where_sql
+        return f"({self.where_sql}) AND {cursor_sql(TIME_COLUMN)}"
+
+    @property
+    def all_params(self) -> list[Any]:
+        if self.after is None:
+            return list(self.params)
+        return [*self.params, *cursor_params(self.after)]
+
     def sql(self, columns: str = "*") -> str:
         """The whole statement, ordered the way the archive is read."""
         order = f" ORDER BY {TIME_COLUMN} ASC, id ASC"
@@ -93,7 +113,7 @@ class Plan:
         # Otherwise the post filter would be handed a short list and would
         # return fewer rows than the caller asked for.
         tail = f" LIMIT {self.limit}" if self.limit is not None and self.fully_pushed else ""
-        return f"SELECT {columns} FROM records WHERE {self.where_sql}{order}{tail}"
+        return f"SELECT {columns} FROM records WHERE {self.full_where}{order}{tail}"
 
 
 def _compare_sql(node: Compare) -> tuple[str, list[Any]]:
@@ -159,12 +179,18 @@ def _join(left: Node | None, right: Node | None) -> Node | None:
     return And(left=left, right=right)
 
 
-def plan(query: Query) -> Plan:
+def plan(query: Query, after: Cursor | None = None) -> Plan:
     """Work out the statement and what the evaluator still has to do."""
     if query.where is None:
-        return Plan(limit=query.limit)
+        return Plan(limit=query.limit, after=after)
     pushed, residual = _split(query.where)
     if pushed is None:
-        return Plan(limit=query.limit, residual=residual)
+        return Plan(limit=query.limit, residual=residual, after=after)
     where_sql, params = _node_sql(pushed)
-    return Plan(where_sql=where_sql, params=params, limit=query.limit, residual=residual)
+    return Plan(
+        where_sql=where_sql,
+        params=params,
+        limit=query.limit,
+        residual=residual,
+        after=after,
+    )

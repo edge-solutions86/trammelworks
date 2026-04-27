@@ -19,6 +19,7 @@ from stanchion.archive.repository import StoredRecord
 from stanchion.archive.schema import open_archive
 from stanchion.cli.main import Context, cli, fail, loaded, reporting
 from stanchion.clocks import SystemClock
+from stanchion.query.cursor import parse_cursor
 from stanchion.query.execute import DEFAULT_SCAN_CEILING, explain, search
 from stanchion.query.parser import parse_query
 
@@ -41,6 +42,7 @@ def render_record(record: StoredRecord, full: bool) -> str:
 @click.option(
     "--ceiling", default=DEFAULT_SCAN_CEILING, show_default=True, help="Most rows to scan."
 )
+@click.option("--after", default="", help="Resume from the cursor a previous page printed.")
 @click.pass_obj
 def query_command(
     obj: Context,
@@ -49,6 +51,7 @@ def query_command(
     count_only: bool,
     show_plan: bool,
     ceiling: int,
+    after: str,
 ) -> None:
     """Search the local archive with a filter expression."""
     config = loaded(obj)
@@ -60,12 +63,16 @@ def query_command(
         click.echo(explain(query), err=True)
     with reporting():
         connection = open_archive(config.archive.file, read_only=True)
-        found = search(connection, query, ceiling=ceiling)
+        found = search(
+            connection, query, ceiling=ceiling, after=parse_cursor(after) if after else None
+        )
     if count_only:
         click.echo(str(found.count))
     else:
         for record in found.records:
             click.echo(render_record(record, full))
+    if found.more and found.next_cursor is not None:
+        click.echo(f"next page: --after {found.next_cursor.encode()}", err=True)
     if found.truncated:
         click.echo(f"stopped after scanning {found.scanned} rows, narrow the filter", err=True)
     if obj.verbose:

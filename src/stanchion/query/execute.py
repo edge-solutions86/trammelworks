@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from stanchion.archive.repository import StoredRecord, row_to_record
 from stanchion.errors import QueryError
 from stanchion.query.ast import Query
+from stanchion.query.cursor import Cursor
 from stanchion.query.evaluate import matches
 from stanchion.query.plan import Plan, plan
 
@@ -36,10 +37,21 @@ class SearchResult:
     post_filtered: int = 0
     truncated: bool = False
     plan_sql: str = ""
+    next_cursor: Cursor | None = None
 
     @property
     def count(self) -> int:
         return len(self.records)
+
+    @property
+    def more(self) -> bool:
+        """Whether asking again with ``next_cursor`` could return anything.
+
+        A page that filled its limit, or one that stopped at the ceiling. A
+        page that ran out of rows has no next cursor at all, which is how a
+        caller knows to stop rather than by comparing counts.
+        """
+        return self.next_cursor is not None
 
     def describe(self) -> str:
         end = ", truncated" if self.truncated else ""
@@ -50,11 +62,18 @@ def search(
     connection: sqlite3.Connection,
     query: Query,
     ceiling: int = DEFAULT_SCAN_CEILING,
+    after: Cursor | None = None,
 ) -> SearchResult:
-    """Plan, fetch and finish a filter."""
+    """Plan, fetch and finish a filter.
+
+    ``after`` resumes a previous page. The cursor handed back is the position
+    of the last record actually returned, not the last row read, because the
+    rows the residual dropped were never shown to anybody and resuming past
+    them would skip whatever comes next.
+    """
     if ceiling < 1:
         raise QueryError("scan ceiling must be at least one", detail=str(ceiling))
-    built = plan(query)
+    built = plan(query, after=after)
     result = SearchResult(plan_sql=built.sql())
     wanted = query.limit
     for row in _fetch(connection, built, ceiling):
@@ -64,10 +83,14 @@ def search(
             result.post_filtered += 1
             continue
         result.records.append(record)
+        result.next_cursor = Cursor(at_ns=record.best_at.epoch_ns, row_id=int(row["id"]))
         if wanted is not None and len(result.records) >= wanted:
-            break
-    else:
-        result.truncated = result.scanned >= ceiling
+            return result
+    result.truncated = result.scanned >= ceiling
+    if not result.truncated:
+        # The rows ran out, so there is no next page and saying otherwise
+        # would have the caller ask once more for nothing.
+        result.next_cursor = None
     return result
 
 
@@ -76,7 +99,7 @@ def _fetch(connection: sqlite3.Connection, built: Plan, ceiling: int) -> list[sq
     if built.limit is None or not built.fully_pushed:
         statement = f"{statement} LIMIT {ceiling}"
     try:
-        return list(connection.execute(statement, built.params))
+        return list(connection.execute(statement, built.all_params))
     except sqlite3.DatabaseError as exc:
         raise QueryError("the archive refused the query", detail=str(exc)) from exc
 

@@ -94,8 +94,39 @@ def test_counting_an_empty_result_is_zero(config: Path, filled: Repository) -> N
     assert invoke(config, "--count", "unit = absent").output.strip() == "0"
 
 
+def records_printed(output: str) -> list[str]:
+    """The record lines, without the notes the command writes to stderr."""
+    return [
+        line
+        for line in output.strip().splitlines()
+        if line and not line.startswith(("next page:", "stopped after", "sql:"))
+    ]
+
+
 def test_a_limit_is_honoured(config: Path, filled: Repository) -> None:
-    assert len(invoke(config, "limit 1").output.strip().splitlines()) == 1
+    assert len(records_printed(invoke(config, "limit 1").output)) == 1
+
+
+def test_a_full_page_offers_the_next_one(config: Path, filled: Repository) -> None:
+    assert "next page: --after " in invoke(config, "limit 1").output
+
+
+def test_the_cursor_it_prints_can_be_handed_back(config: Path, filled: Repository) -> None:
+    first = invoke(config, "limit 1").output
+    cursor = first.split("next page: --after ")[1].split()[0]
+    second = invoke(config, "limit 1", "--after", cursor).output
+    assert records_printed(second)
+    assert records_printed(second) != records_printed(first)
+
+
+def test_a_last_page_offers_nothing_more(config: Path, filled: Repository) -> None:
+    assert "next page:" not in invoke(config, "limit 10000").output
+
+
+def test_a_malformed_cursor_is_refused(config: Path, filled: Repository) -> None:
+    result = invoke(config, "--after", "nonsense")
+    assert result.exit_code != 0
+    assert "cursor is malformed" in result.output
 
 
 def test_explain_shows_the_plan(config: Path, filled: Repository) -> None:

@@ -179,7 +179,7 @@ def count_by(
     name = check_group(group)
     built = plan(query)
     if built.fully_pushed:
-        return _count_in_database(connection, built.where_sql, built.params, COLUMNS[name])
+        return _count_in_database(connection, built.full_where, built.all_params, COLUMNS[name])
     return _count_in_memory(connection, query, ceiling, group=name, width_ns=None)
 
 
@@ -196,7 +196,7 @@ def count_over_time(
     built = plan(query)
     if built.fully_pushed:
         column = f"CAST({TIME_COLUMN} / {width} AS INTEGER) * {width}"
-        return _count_in_database(connection, built.where_sql, built.params, column)
+        return _count_in_database(connection, built.full_where, built.all_params, column)
     return _count_in_memory(connection, query, ceiling, group=None, width_ns=width)
 
 
@@ -243,7 +243,7 @@ def _count_in_memory(
     built = plan(query)
     statement = f"{built.sql()} LIMIT {ceiling}"
     try:
-        rows = list(connection.execute(statement, built.params))
+        rows = list(connection.execute(statement, built.all_params))
     except sqlite3.DatabaseError as exc:
         raise QueryError("the archive refused the count", detail=str(exc)) from exc
     tally = Tally(in_database=False, truncated=len(rows) >= ceiling)
