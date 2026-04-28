@@ -11,10 +11,11 @@ from stanchion.archive.space import checkpoint, file_size, measure
 from stanchion.clocks import ManualClock
 from stanchion.config import IngestConfig, SiteConfig
 from stanchion.errors import ConfigError
+from stanchion.housekeep import HousekeepReport
 from stanchion.records import LogRecord, Stream
 from stanchion.ship.config import ShipSettings
 from stanchion.ship.transport import MemoryTransport
-from stanchion.site import HousekeepReport, Site
+from stanchion.site import Site
 from stanchion.spool.config import SpoolSettings
 from stanchion.spool.priority import PriorityTable
 from stanchion.timestamps import NanoTime
@@ -273,4 +274,43 @@ def test_housekeeping_after_a_vacuum_still_measures(tree: SiteTree, tmp_path: Pa
     site.housekeep()
     assert site.archive is not None
     assert measure(site.archive.connection, tmp_path / "archive" / "records.sqlite3").used > 0
+    site.close()
+
+
+def test_a_site_with_an_archive_has_a_housekeeper(tree: SiteTree, tmp_path: Path) -> None:
+    site = build(tree, tmp_path)
+    assert site.housekeeper() is not None
+    site.close()
+
+
+def test_a_site_without_one_has_none(tree: SiteTree, tmp_path: Path) -> None:
+    site = build(tree, tmp_path, enabled=False)
+    assert site.housekeeper() is None
+    site.close()
+
+
+def test_the_housekeeper_can_be_driven_on_its_own(tree: SiteTree, tmp_path: Path) -> None:
+    site = build(tree, tmp_path, vacuum_min_reclaim_bytes=1)
+    load(site, "price-sign", 2000, day=40)
+    settle(site)
+    keeper = site.housekeeper()
+    assert keeper is not None
+    assert keeper.sweep().deleted == 2000
+    assert keeper.vacuum() > 0
+    site.close()
+
+
+def test_the_report_totals_both_kinds_of_deletion() -> None:
+    report = HousekeepReport()
+    report.sweep.deleted = 4
+    report.trim.deleted = 3
+    assert report.deleted == 7
+
+
+def test_the_housekeeper_measures_the_same_file(tree: SiteTree, tmp_path: Path) -> None:
+    site = build(tree, tmp_path)
+    keeper = site.housekeeper()
+    assert keeper is not None
+    assert keeper.path == tmp_path / "archive" / "records.sqlite3"
+    assert keeper.footprint().total > 0
     site.close()

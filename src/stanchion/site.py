@@ -36,7 +36,7 @@ from pathlib import Path, PurePosixPath
 
 from stanchion.archive.repository import Repository
 from stanchion.archive.schema import open_archive
-from stanchion.archive.space import Footprint, Trimmer, TrimReport, measure, vacuum, worth_vacuuming
+from stanchion.archive.space import measure
 from stanchion.archive.sweeper import Sweeper, SweepReport
 from stanchion.clockfix.host import current_boot_identity
 from stanchion.clockfix.observe import SyncObserver
@@ -44,8 +44,8 @@ from stanchion.clockfix.reconcile import Reconciler
 from stanchion.clockfix.store import ClockStore
 from stanchion.clocks import Clock, SystemClock
 from stanchion.config import SiteConfig
-from stanchion.errors import RetentionError
 from stanchion.eventlog import EventLog, null_log
+from stanchion.housekeep import Housekeeper, HousekeepReport
 from stanchion.ingest.checkpoint import CheckpointStore
 from stanchion.ingest.engine import IngestEngine
 from stanchion.records import LogRecord
@@ -87,33 +87,6 @@ class CollectReport:
     @property
     def idle(self) -> bool:
         return self.read == 0
-
-
-@dataclass(slots=True)
-class HousekeepReport:
-    """What one pass over the archive's disk did.
-
-    Three stages in one report because they only make sense together: the sweep
-    decides what may go, the trim takes more when the cap says it has to, and
-    the vacuum is the only one of the three that hands anything back to the
-    card. Reporting them apart would let an operator read a large sweep as a
-    large saving.
-    """
-
-    sweep: SweepReport = field(default_factory=SweepReport)
-    trim: TrimReport = field(default_factory=TrimReport)
-    reclaimed: int = 0
-    before: Footprint = field(default_factory=Footprint)
-    after: Footprint = field(default_factory=Footprint)
-
-    @property
-    def idle(self) -> bool:
-        return self.sweep.deleted == 0 and self.trim.deleted == 0 and self.reclaimed == 0
-
-    def __str__(self) -> str:
-        return (
-            f"swept {self.sweep.deleted}, trimmed {self.trim.deleted}, freed {self.reclaimed} bytes"
-        )
 
 
 @dataclass(slots=True)
@@ -358,74 +331,27 @@ class Site:
 
     def sweep(self) -> SweepReport:
         """Apply retention to the archive."""
-        if self.sweeper is None:
-            return SweepReport()
-        report = self.sweeper.sweep(self.clock.now())
-        if report.deleted:
-            self.metrics.incr("archive_deleted", report.deleted)
-            self.events.info("archive_swept", deleted=report.deleted, held=report.held)
-        return report
+        keeper = self.housekeeper()
+        return SweepReport() if keeper is None else keeper.sweep()
 
     def housekeep(self) -> HousekeepReport:
-        """Retention, then the cap, then give the card its space back.
+        """One pass of retention, the cap and the vacuum, in that order."""
+        keeper = self.housekeeper()
+        return HousekeepReport() if keeper is None else keeper.run()
 
-        In that order and never any other. Trimming before the sweep would take
-        records that retention was about to delete for free, and vacuuming
-        before either would rewrite the whole file and then immediately make
-        holes in it again.
-        """
-        report = HousekeepReport()
-        settings = self.config.archive
+    def housekeeper(self) -> Housekeeper | None:
+        """The archive housekeeper, or None on a site that keeps no archive."""
         if self.archive is None or self.sweeper is None:
-            return report
-        report.before = measure(self.archive.connection, settings.file)
-        report.sweep = self.sweep()
-        report.trim = self._trim()
-        if settings.vacuum:
-            report.reclaimed = self._vacuum()
-        report.after = measure(self.archive.connection, settings.file)
-        return report
-
-    def _trim(self) -> TrimReport:
-        """Take records retention kept, when the cap leaves no choice."""
-        settings = self.config.archive
-        if not settings.trim_to_cap or self.archive is None or self.sweeper is None:
-            return TrimReport()
-        trimmer = Trimmer(
+            return None
+        return Housekeeper(
             connection=self.archive.connection,
-            path=settings.file,
-            cap_bytes=settings.max_bytes,
+            settings=self.config.archive,
+            sweeper=self.sweeper,
             table=self.config.spool.table(),
+            clock=self.clock,
+            events=self.events,
+            metrics=self.metrics,
         )
-        report = trimmer.run(self.sweeper.holds.all(), self.clock.now())
-        if report.deleted:
-            self.metrics.incr("archive_trimmed", report.deleted)
-            self.events.warn(
-                "archive_trimmed",
-                deleted=report.deleted,
-                held=report.held,
-                stopped=report.stopped,
-            )
-        return report
-
-    def _vacuum(self) -> int:
-        """Rewrite the archive if the free space is worth the write cycles."""
-        settings = self.config.archive
-        if self.archive is None:
-            return 0
-        found = measure(self.archive.connection, settings.file)
-        if not worth_vacuuming(found, min_reclaim=settings.vacuum_min_reclaim_bytes):
-            return 0
-        try:
-            freed = vacuum(self.archive.connection, settings.file)
-        except RetentionError as exc:
-            self.metrics.incr("archive_vacuum_failed")
-            self.events.exception("archive_vacuum_failed", exc)
-            return 0
-        self.metrics.incr("archive_vacuumed")
-        self.metrics.incr("archive_vacuum_freed", freed)
-        self.events.info("archive_vacuumed", freed=freed)
-        return freed
 
     def snapshot(self) -> dict[str, int]:
         """Every counter the site keeps, in one mapping.
