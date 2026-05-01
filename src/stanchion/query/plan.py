@@ -138,7 +138,8 @@ def _node_sql(node: Node) -> tuple[str, list[Any]]:
         return _compare_sql(node)
     if isinstance(node, InSet):
         holes = ", ".join("?" for _ in node.values)
-        return f"{COLUMNS[node.field]} IN ({holes})", list(node.values)
+        keyword = "NOT IN" if node.negated else "IN"
+        return f"{COLUMNS[node.field]} {keyword} ({holes})", list(node.values)
     if isinstance(node, Since):
         return f"{TIME_COLUMN} >= ?", [node.at_ns]
     if isinstance(node, Until):

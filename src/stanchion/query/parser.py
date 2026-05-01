@@ -153,6 +153,14 @@ class Parser:
         if self.at_keyword("in"):
             self.advance()
             return InSet(field=field.text, values=self._value_list())
+        if self.at_keyword("not"):
+            # "unit not in (a, b)" rather than "not unit in (a, b)". Both mean
+            # the same thing and only one of them is how anybody says it.
+            self.advance()
+            if not self.at_keyword("in"):
+                raise QueryError("expected in after not", detail=str(self.current))
+            self.advance()
+            return InSet(field=field.text, values=self._value_list(), negated=True)
         operator = self.current
         if operator.kind is not Kind.OPERATOR:
             raise QueryError("expected a comparison operator", detail=str(operator))

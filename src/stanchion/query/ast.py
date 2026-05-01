@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from stanchion.errors import QueryError
+from stanchion.query.lexer import KEYWORDS, NUMBER_PATTERN, WORD_PATTERN
 
 #: The fields a filter may name. Anything else is a typo, and a typo that
 #: silently matched nothing would be read as "there were no such records".
@@ -82,6 +83,7 @@ class InSet(Node):
 
     field: str
     values: tuple[str, ...]
+    negated: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field", check_field(self.field))
@@ -90,7 +92,8 @@ class InSet(Node):
 
     def render(self) -> str:
         inner = ", ".join(_quote(value) for value in self.values)
-        return f"{self.field} in ({inner})"
+        keyword = "not in" if self.negated else "in"
+        return f"{self.field} {keyword} ({inner})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,9 +164,30 @@ class Query:
         return self.where is None
 
 
+def bare_token(value: str) -> bool:
+    """Whether the lexer would read this as exactly one word or number."""
+    if not value:
+        return False
+    for pattern in (WORD_PATTERN, NUMBER_PATTERN):
+        match = pattern.match(value)
+        if match is not None and match.end() == len(value):
+            return True
+    return False
+
+
 def _quote(value: str) -> str:
-    """Quote a value only where the parser would need it back."""
-    if value and all(character.isalnum() or character in "-_.:" for character in value):
+    """Quote a value unless the lexer would read it back whole and unchanged.
+
+    The test is the lexer's own patterns rather than a character set written
+    out again here. A second copy of "what counts as a bare word" is a copy
+    that drifts, and when it drifts this way the damage is a filter that
+    renders into text the parser then refuses: a colon on its own passed this
+    check and failed to tokenise.
+
+    A value that spells a keyword is quoted too. ``unit = and`` is three tokens
+    and none of them is the value somebody meant.
+    """
+    if bare_token(value) and value.lower() not in KEYWORDS:
         return value
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 

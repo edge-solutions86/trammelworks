@@ -107,7 +107,11 @@ def matches(node: Node | None, record: Any) -> bool:
         return compare_values(found, node.op, node.value)
     if isinstance(node, InSet):
         found = field_value(record, node.field)
-        return found is not None and found in node.values
+        if found is None:
+            # Same rule as a negated comparison: a label that is absent is
+            # outside any list of values somebody named, and inside none.
+            return node.negated
+        return (found in node.values) is not node.negated
     raise QueryError("unknown filter node", detail=type(node).__name__)
 
 

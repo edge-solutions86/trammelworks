@@ -247,3 +247,30 @@ def test_parse_instant_reads_both_forms() -> None:
         parse_instant("2025-01-01T00:00:00Z", NOW)
         == NanoTime.parse("2025-01-01T00:00:00Z").epoch_ns
     )
+
+
+def test_not_in_parses_as_a_negated_set() -> None:
+    node = parse_query("unit not in (a, b)", NOW).where
+    assert node == InSet(field="unit", values=("a", "b"), negated=True)
+
+
+def test_not_in_renders_the_way_it_was_typed() -> None:
+    node = parse_query("unit not in (a, b)", NOW).where
+    assert node is not None
+    assert node.render() == "unit not in (a, b)"
+
+
+def test_a_plain_in_is_not_negated() -> None:
+    node = parse_query("unit in (a)", NOW).where
+    assert isinstance(node, InSet)
+    assert node.negated is False
+
+
+def test_not_without_in_after_a_field_is_refused() -> None:
+    with pytest.raises(QueryError, match="expected in after not"):
+        parse_query("unit not = a", NOW)
+
+
+def test_a_leading_not_still_negates_a_whole_term() -> None:
+    node = parse_query("not unit in (a)", NOW).where
+    assert isinstance(node, Not)
