@@ -25,6 +25,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from stanchion.errors import ParseError
+from stanchion.ingest.confine import Confinement, Verdict
 from stanchion.paths import Layout, LogPathInfo, parse_log_path
 
 LAYOUT_PREFERENCE = (Layout.CRI, Layout.FLAT, Layout.DOCKER)
@@ -34,6 +35,7 @@ class SkipReason(StrEnum):
     """Why a path in the log root is not being followed."""
 
     UNPARSEABLE = "unparseable"
+    OUTSIDE = "outside_the_root"
     ROTATED = "rotated"
     COMPRESSED = "compressed"
     DUPLICATE = "duplicate"
@@ -53,6 +55,7 @@ class Discovery:
 
     follow: list[LogPathInfo] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
+    refused: list[Verdict] = field(default_factory=list)
 
     @property
     def units(self) -> tuple[str, ...]:
@@ -117,8 +120,18 @@ def deduplicate(candidates: list[LogPathInfo]) -> tuple[list[LogPathInfo], list[
 
 
 def discover(root: Path, units: tuple[str, ...] = ()) -> Discovery:
-    """Walk the log root and decide what to follow."""
-    candidates, skipped = classify(list(walk(root)))
+    """Walk the log root and decide what to follow.
+
+    The confinement check comes before anything reads a byte. A link out of the
+    root is refused rather than parsed and rejected, because parsing it means
+    opening it, and the file it points at is the reason not to.
+    """
+    fence = Confinement(root=Path(root))
+    allowed, refused = fence.keep(list(walk(root)))
+    candidates, skipped = classify(allowed)
+    skipped.extend(
+        Skipped(path=item.path.as_posix(), reason=SkipReason.OUTSIDE) for item in refused
+    )
     kept, duplicates = deduplicate(candidates)
     skipped.extend(duplicates)
     if units:
@@ -130,4 +143,4 @@ def discover(root: Path, units: tuple[str, ...] = ()) -> Discovery:
             else:
                 skipped.append(Skipped(path=info.path, reason=SkipReason.NOT_SELECTED))
         kept = selected
-    return Discovery(follow=kept, skipped=skipped)
+    return Discovery(follow=kept, skipped=skipped, refused=refused)
