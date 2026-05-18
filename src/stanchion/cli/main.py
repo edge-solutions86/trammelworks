@@ -135,6 +135,7 @@ def load_commands() -> None:
         run_cmd,
         serve_cmd,
         spool_cmd,
+        units_cmd,
     )
 
 
