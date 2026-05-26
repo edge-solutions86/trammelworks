@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import click
 
-from stanchion.archive.schema import open_archive
-from stanchion.cli.main import Context, cli, fail, reporting
+from stanchion.cli.main import Context, cli, fail, reading_archive, reporting
 from stanchion.clocks import SystemClock
 from stanchion.query.aggregate import GROUPABLE, Group, Tally, count_by, count_over_time
 from stanchion.query.execute import DEFAULT_SCAN_CEILING
@@ -74,13 +73,10 @@ def count_command(
     if group is not None and bucket is not None:
         fail("group by a field or over time, not both at once")
     with reporting():
-        config = obj.load()
         query = parse_query(filter_text, SystemClock().now())
         width = None if bucket is None else parse_duration(bucket)
-    if not config.archive.enabled:
-        fail("this site keeps no archive, so there is nothing to count")
+    _, connection = reading_archive(obj, "count")
     with reporting():
-        connection = open_archive(config.archive.file, read_only=True)
         if width is not None:
             tally = count_over_time(connection, query, bucket=width, ceiling=ceiling)
         else:

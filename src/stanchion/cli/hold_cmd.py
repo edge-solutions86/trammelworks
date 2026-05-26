@@ -12,23 +12,44 @@ retention change loose on a site with a year of payment records on it.
 
 from __future__ import annotations
 
+import sqlite3
+
 import click
 
 from stanchion.archive.retention import Hold, format_retention
 from stanchion.archive.schema import open_archive
 from stanchion.archive.sweeper import HoldStore, Sweeper
-from stanchion.cli.main import Context, cli, fail, reporting
+from stanchion.cli.main import (
+    Context,
+    cli,
+    fail,
+    loaded,
+    reading_archive,
+    reporting,
+)
 from stanchion.clocks import SystemClock
-from stanchion.errors import StanchionError
+from stanchion.config import SiteConfig
 from stanchion.query.parser import parse_instant
 from stanchion.timestamps import NanoTime
 
 
-def _archive_or_fail(obj: Context, read_only: bool = False):  # type: ignore[no-untyped-def]
-    config = obj.load()
+def _archive_or_fail(
+    obj: Context, read_only: bool = False
+) -> tuple[SiteConfig, sqlite3.Connection]:
+    """The config and a connection, writable unless the caller only reads.
+
+    Placing and lifting a hold writes, so this cannot be the read only helper
+    the query side uses. It defers to that one where it can, which is every
+    path that only looks.
+    """
+    if read_only:
+        return reading_archive(obj, "list holds for")
+    config = loaded(obj)
     if not config.archive.enabled:
-        raise StanchionError("this site keeps no archive")
-    return config, open_archive(config.archive.file, read_only=read_only)
+        fail("this site keeps no archive")
+    with reporting():
+        return config, open_archive(config.archive.file, read_only=False)
+    raise AssertionError("unreachable")
 
 
 @cli.group("hold")

@@ -19,7 +19,7 @@ import click
 
 from stanchion.archive.repository import Repository
 from stanchion.archive.schema import open_archive
-from stanchion.cli.main import Context, cli, fail, loaded, reporting
+from stanchion.cli.main import Context, cli, loaded, reading_archive, reporting
 from stanchion.clocks import SystemClock
 from stanchion.errors import StanchionError
 from stanchion.query.execute import search
@@ -57,14 +57,11 @@ def report_command(
 ) -> None:
     """Write a report of archived records."""
     with reporting():
-        config = obj.load()
         fmt = parse_format(format_name)
         options = RenderOptions(fmt=fmt, width=width, header=not no_header, raw_time=raw_time)
         query = parse_query(filter_text, SystemClock().now())
-    if not config.archive.enabled:
-        fail("this site keeps no archive, so there is nothing to report on")
+    _, connection = reading_archive(obj, "report on")
     with reporting():
-        connection = open_archive(config.archive.file, read_only=True)
         found = search(connection, query)
     body = render(found.records, options)
     if out_path is None:

@@ -12,6 +12,7 @@ caught and rendered as one line with the stable error code in it.
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -21,6 +22,7 @@ from typing import NoReturn
 
 import click
 
+from stanchion.archive.schema import open_archive
 from stanchion.config import SiteConfig
 from stanchion.configfile import dump_site_config, load_site_config
 from stanchion.errors import StanchionError
@@ -78,6 +80,24 @@ def loaded(obj: Context, code: int = EXIT_CONFIG) -> SiteConfig:
         return obj.load()
     except StanchionError as exc:
         fail(f"{exc.code}: {exc}", code)
+
+
+def reading_archive(obj: Context, doing: str) -> tuple[SiteConfig, sqlite3.Connection]:
+    """The config and a read only archive connection, or one line and a stop.
+
+    Five commands opened the archive and every one of them wrote its own
+    version of the same three steps: load, check the site keeps an archive at
+    all, open it read only. Read only is the part worth having in one place.
+    The collector is writing to that file while an engineer runs a report
+    against it, and a connection opened for writing takes a lock that stops the
+    site collecting for as long as the report runs.
+    """
+    config = loaded(obj)
+    if not config.archive.enabled:
+        fail(f"this site keeps no archive, so there is nothing to {doing}")
+    with reporting():
+        return config, open_archive(config.archive.file, read_only=True)
+    raise AssertionError("unreachable")
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})

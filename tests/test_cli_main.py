@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from stanchion.archive.schema import open_archive
 from stanchion.cli.main import (
     EXIT_CONFIG,
     EXIT_FAILED,
@@ -13,6 +15,7 @@ from stanchion.cli.main import (
     cli,
     fail,
     loaded,
+    reading_archive,
     reporting,
     run,
 )
@@ -175,3 +178,64 @@ def test_failing_never_returns(capsys: pytest.CaptureFixture[str]) -> None:
         fail("gone wrong")
     assert caught.value.code == EXIT_FAILED
     assert capsys.readouterr().err.strip() == "gone wrong"
+
+
+def archive_config(tmp_path: Path, enabled: bool = True) -> Path:
+    target = tmp_path / "site.yaml"
+    body = f"site: US-TX-0417\nspool:\n  directory: {(tmp_path / 'spool').as_posix()}\narchive:\n"
+    if enabled:
+        body += f"  path: {(tmp_path / 'archive' / 'records.sqlite3').as_posix()}\n"
+    else:
+        body += "  enabled: false\n"
+    target.write_text(body, encoding="utf-8")
+    return target
+
+
+def made(tmp_path: Path) -> Path:
+    """A config whose archive file has actually been created.
+
+    Opening read only refuses a file that is not there, which is the right
+    answer: a reader that created an empty archive would report a site with no
+    records rather than a site that has never written one.
+    """
+    target = archive_config(tmp_path)
+    open_archive(tmp_path / "archive" / "records.sqlite3").close()
+    return target
+
+
+def test_reading_a_missing_archive_is_refused(tmp_path: Path) -> None:
+    obj = Context(config_path=archive_config(tmp_path), verbose=False)
+    with pytest.raises(SystemExit):
+        reading_archive(obj, "query")
+
+
+def test_reading_an_archive_gives_back_the_config_and_a_connection(tmp_path: Path) -> None:
+    obj = Context(config_path=made(tmp_path), verbose=False)
+    config, connection = reading_archive(obj, "query")
+    assert config.site == "US-TX-0417"
+    assert connection.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+
+
+def test_a_site_with_no_archive_stops_with_the_verb_it_was_given(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    obj = Context(config_path=archive_config(tmp_path, enabled=False), verbose=False)
+    with pytest.raises(SystemExit):
+        reading_archive(obj, "count")
+    assert "nothing to count" in capsys.readouterr().err
+
+
+def test_the_connection_it_hands_back_is_read_only(tmp_path: Path) -> None:
+    # The collector is writing to this file while a report runs against it, so
+    # a writable connection here would take the lock that stops the site.
+    obj = Context(config_path=made(tmp_path), verbose=False)
+    _, connection = reading_archive(obj, "query")
+    with pytest.raises(sqlite3.OperationalError):
+        connection.execute("DELETE FROM records")
+
+
+def test_a_missing_config_stops_before_the_archive(tmp_path: Path) -> None:
+    obj = Context(config_path=tmp_path / "absent.yaml", verbose=False)
+    with pytest.raises(SystemExit) as caught:
+        reading_archive(obj, "query")
+    assert caught.value.code == EXIT_CONFIG
