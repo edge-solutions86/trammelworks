@@ -22,6 +22,7 @@ it:
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -35,6 +36,7 @@ from stanchion.ingest.discover import discover
 from stanchion.redact.engine import Redactor
 from stanchion.spool.budget import measure
 from stanchion.spool.segment import list_segments
+from stanchion.units import format_bytes
 
 #: A number that is a card number, used to prove the pass actually fires.
 PROBE_PAN = "4111111111111111"
@@ -202,7 +204,92 @@ def check_state(config: SiteConfig, report: Report) -> None:
     report.note("state", f"state directory is {state}")
 
 
-CHECKS = (check_log_root, check_spool, check_redaction, check_archive, check_ship, check_state)
+def check_signing(config: SiteConfig, report: Report) -> None:
+    """A site that says it signs has to be able to."""
+    settings = config.ship
+    if not settings.signs:
+        report.note("signing", "batches are not signed by this site")
+        return
+    try:
+        key = settings.signing_key()
+    except StanchionError as exc:
+        report.fail("signing", f"the signing key will not load: {exc}")
+        return
+    if key is None:
+        report.fail("signing", "signing is configured but no key was produced")
+        return
+    report.note("signing", f"signing as {key.key_id}")
+
+
+def check_space(config: SiteConfig, report: Report) -> None:
+    """Whether the two disk budgets can both be honoured on this card.
+
+    The spool budget and the archive cap are set separately and nothing has
+    checked them against each other before now. Together they are what this
+    site will occupy when both are full, and a commissioning sheet that adds
+    up to more than the card holds is the kind of error that only shows up
+    months later on the night both fill.
+    """
+    spool = config.spool.budget_bytes
+    archive = config.archive.max_bytes if config.archive.enabled else 0
+    total = spool + archive
+    free = free_space(config.spool.path)
+    report.note(
+        "space",
+        f"spool {format_bytes(spool)} plus archive {format_bytes(archive)} "
+        f"is {format_bytes(total)}",
+    )
+    if free is None:
+        return
+    if total > free:
+        report.fail(
+            "space",
+            f"the budgets need {format_bytes(total)} and the disk has {format_bytes(free)}",
+        )
+    elif total > free * CROWDED:
+        report.warn(
+            "space",
+            f"the budgets take most of the disk, {format_bytes(free)} free",
+        )
+
+
+def check_compaction(config: SiteConfig, report: Report) -> None:
+    """Whether anything will ever give the disk back."""
+    if not config.ship.compact:
+        report.warn("compaction", "part shipped segments are never compacted")
+        return
+    if config.archive.enabled and not config.archive.vacuum:
+        report.warn("compaction", "the archive is never vacuumed, so deletions free nothing")
+        return
+    report.note("compaction", "the spool compacts and the archive vacuums")
+
+
+def free_space(path: Path) -> int | None:
+    """What the filesystem says is left, or None when it will not say."""
+    target = path
+    while not target.exists() and target != target.parent:
+        target = target.parent
+    try:
+        return shutil.disk_usage(target).free
+    except OSError:
+        return None
+
+
+#: Above this fraction of the free disk, the budgets are worth a warning.
+CROWDED = 0.8
+
+
+CHECKS = (
+    check_log_root,
+    check_spool,
+    check_redaction,
+    check_archive,
+    check_ship,
+    check_signing,
+    check_space,
+    check_compaction,
+    check_state,
+)
 
 
 def run_checks(config: SiteConfig) -> Report:

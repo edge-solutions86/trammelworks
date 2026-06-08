@@ -1,0 +1,116 @@
+# A commissioned forecourt site, with every section written out.
+#
+# This file is loaded and checked by the test suite, so it cannot drift away
+# from what the code accepts. An example config that no longer parses is worse
+# than none: it is the first thing an engineer copies.
+
+site: US-TX-0417
+
+ingest:
+  log_root: /var/log/containers
+  poll_interval: 2s
+  read_chunk: 256KiB
+  max_line_bytes: 512KiB
+
+  # Left empty so every container is followed. Naming units here ships only
+  # those, but the others are still discovered and counted, which is how
+  # anyone notices a tank gauge that stopped logging altogether.
+  units: []
+
+  multiline:
+    # The payment kernel writes Java stack traces. Without this each frame
+    # ships as its own record and the trace is unreadable at the far end.
+    payment-kernel:
+      start: '^\d{4}-\d{2}-\d{2}'
+      max_lines: 200
+    pump-bridge:
+      continuation: '^\s+at '
+      max_lines: 80
+
+spool:
+  directory: /var/lib/stanchion/spool
+  budget: 512MiB
+  segment: 8MiB
+
+  # A tenth of the budget is held back so that sealing a segment during an
+  # eviction has somewhere to go.
+  reserve_ratio: 0.1
+
+  # Zero means no explicit fsync, which is the right default on an SD card
+  # that is already the slowest thing on the box. Records lost to a power cut
+  # are the ones still in the page cache, and they are also still in the
+  # container's own log file.
+  sync_every: 0
+  compress: true
+
+  priority:
+    units:
+      payment-kernel: payment
+      emv-kernel: payment
+      price-sign: chatter
+      loyalty-sync: chatter
+
+redact:
+  enabled: true
+  keep_first: 6
+  keep_last: 4
+  rules:
+    # A fleet driver id is not cardholder data, but it identifies a person
+    # and the estate would rather it did not travel.
+    driver_id:
+      pattern: '\bDRV[0-9]{8}\b'
+      action: drop
+
+    # Kept partially, so a dispute can still be matched to a card without the
+    # reference itself leaving the site.
+    fleet_card_ref:
+      pattern: '\bFLEET-[A-Z0-9]{10}\b'
+      action: mask
+      keep_first: 6
+      keep_last: 2
+
+archive:
+  enabled: true
+  path: /var/lib/stanchion/archive/records.sqlite3
+  max_bytes: 2GiB
+  max_deletes: 50000
+  sweep_every: 6h
+
+  # Off by default. Turning it on lets the site delete records retention would
+  # have kept, when the cap leaves no other way to make room.
+  trim_to_cap: false
+  vacuum: true
+  vacuum_min_reclaim: 32MiB
+
+  retention:
+    payment: 180d
+    standard: 30d
+    chatter: 7d
+
+ship:
+  endpoint: https://collector.example.net/v1/ingest
+  monthly_allowance: 2GB
+  anchor_day: 1
+  batch: 256KiB
+  batch_records: 2000
+  attempt_timeout: 30s
+  interval: 5m
+  delete_acknowledged: true
+
+  # The secret is never in this file. Commissioning writes the key beside it
+  # with tight permissions and the config only names it.
+  signing_key_file: /etc/stanchion/site.key
+  signing_key_id: tx-0417-2025
+
+  compact: true
+  compact_min_reclaim: 64KiB
+  compact_min_fraction: 0.25
+
+  floors:
+    payment: 0.5
+    standard: 0.3
+    chatter: 0.1
+
+labels:
+  estate: southwest
+  brand: forecourt-one
