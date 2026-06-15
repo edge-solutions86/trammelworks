@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,6 +32,10 @@ from stanchion.spool.priority import PriorityTable
 from stanchion.timestamps import NanoTime
 
 DEFAULT_LIMIT = 1000
+
+#: Rows per transaction. Large enough that the commit cost disappears into the
+#: write, small enough that the lock is never held for long.
+DEFAULT_BATCH = 500
 MAX_LIMIT = 100_000
 
 ORDER_COLUMN = "COALESCE(corrected_ns, observed_ns)"
@@ -105,17 +109,21 @@ class Repository:
 
     connection: sqlite3.Connection
     table: PriorityTable = field(default_factory=PriorityTable)
+    batch: int = DEFAULT_BATCH
     written: int = 0
     duplicates: int = 0
 
-    def add(self, record: LogRecord, stored_at: NanoTime) -> bool:
-        """Store one record. Returns whether it was new."""
-        klass = self.table.class_for(record.unit).name
-        values = (
+    def __post_init__(self) -> None:
+        if self.batch < 1:
+            raise StanchionError("the archive batch must be at least one")
+
+    def _row(self, record: LogRecord, stored_at: NanoTime) -> tuple[Any, ...]:
+        """One record as the insert statement wants it."""
+        return (
             record_key(record),
             record.site,
             record.unit,
-            klass,
+            self.table.class_for(record.unit).name,
             record.stream.value,
             record.observed_at.epoch_ns,
             None if record.corrected_at is None else record.corrected_at.epoch_ns,
@@ -124,18 +132,40 @@ class Repository:
             json.dumps(record.labels, sort_keys=True),
             stored_at.epoch_ns,
         )
-        with self.connection:
-            cursor = self.connection.execute(INSERT, values)
-        added = cursor.rowcount == 1
-        if added:
-            self.written += 1
-        else:
-            self.duplicates += 1
-        return added
+
+    def add(self, record: LogRecord, stored_at: NanoTime) -> bool:
+        """Store one record. Returns whether it was new."""
+        return self.add_all([record], stored_at) == 1
 
     def add_all(self, records: Iterable[LogRecord], stored_at: NanoTime) -> int:
-        """Store many. Returns how many were new."""
-        return sum(int(self.add(record, stored_at)) for record in records)
+        """Store many in as few transactions as it takes. Returns how many were new.
+
+        One transaction per chunk rather than per record. A collect pass hands
+        this a few thousand records at a time and a backfill hands it a day's
+        worth, and a commit per record on an SD card is the difference between
+        a pass that finishes and one the operator kills.
+
+        The count of new records comes from the connection's total change
+        counter rather than from ``rowcount``, which reports -1 for an
+        ``executemany`` and would have every caller believing nothing was
+        written.
+
+        Chunked rather than done in one go, because a single transaction over
+        four hundred thousand rows holds the write lock for as long as it takes
+        and the collector is trying to use the same file.
+        """
+        added = 0
+        seen = 0
+        for chunk in _chunks(records, self.batch):
+            seen += len(chunk)
+            rows = [self._row(record, stored_at) for record in chunk]
+            before = self.connection.total_changes
+            with self.connection:
+                self.connection.executemany(INSERT, rows)
+            added += self.connection.total_changes - before
+        self.written += added
+        self.duplicates += seen - added
+        return added
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT count(*) AS n FROM records").fetchone()["n"])
@@ -200,3 +230,15 @@ def source_refs(record: StoredRecord) -> tuple[SourceRef, ...]:
     rotation has usually already removed by the time anyone asks.
     """
     return ()
+
+
+def _chunks(records: Iterable[LogRecord], size: int) -> Iterator[list[LogRecord]]:
+    """Walk an iterable in fixed size pieces, without materialising all of it."""
+    held: list[LogRecord] = []
+    for record in records:
+        held.append(record)
+        if len(held) >= size:
+            yield held
+            held = []
+    if held:
+        yield held
