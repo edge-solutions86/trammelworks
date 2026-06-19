@@ -30,6 +30,8 @@ from stanchion.query.cursor import parse_cursor
 from stanchion.query.execute import search
 from stanchion.query.parser import parse_query
 from stanchion.report.summary import Summary
+from stanchion.service.metrics import gather
+from stanchion.site import state_directory
 from stanchion.spool.budget import measure
 from stanchion.spool.segment import list_segments
 from stanchion.timestamps import NanoTime
@@ -153,6 +155,25 @@ class Service:
             payload["next"] = found.next_cursor.encode()
         return Response(status=200, payload=payload)
 
+    def metrics(self, request: Request) -> Response:
+        """Every gauge this site can answer for, read off its own disk.
+
+        JSON like every other route, with the plain text form beside it under
+        ``text``. The estate poller wants the text and parses it with awk; the
+        kiosk wants the numbers and would rather not.
+        """
+        found = gather(self.config, state_directory(self.config.spool.directory))
+        return Response(
+            status=200,
+            payload={
+                "site": self.config.site,
+                "at": self.now.isoformat(),
+                "gauges": found.as_dict(),
+                "unreadable": list(found.missing),
+                "text": found.render(),
+            },
+        )
+
     def units(self, request: Request) -> Response:
         if not self.config.archive.enabled or not self.config.archive.file.exists():
             return Response(status=200, payload={"units": []})
@@ -196,4 +217,5 @@ ROUTES = {
     "/summary": Service.summary,
     "/records": Service.records,
     "/units": Service.units,
+    "/metrics": Service.metrics,
 }
