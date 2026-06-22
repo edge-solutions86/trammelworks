@@ -156,6 +156,7 @@ def load_commands() -> None:
         serve_cmd,
         spool_cmd,
         units_cmd,
+        verify_cmd,
     )
 
 
