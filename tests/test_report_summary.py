@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 
 from stanchion.report.summary import (
+    FIELD_NAMES,
     ClockSummary,
     IngestSummary,
     ShipSummary,
     SpoolSummary,
     Summary,
     from_metrics,
+    section_dict,
 )
 from stanchion.timestamps import NanoTime
 
@@ -196,3 +199,52 @@ def test_an_empty_snapshot_flags_that_nothing_is_followed() -> None:
 def test_a_missing_spool_limit_does_not_divide_by_zero() -> None:
     built = from_metrics(SITE, NOW, {"spool_bytes": 4})
     assert built.spool.ratio > 0
+
+
+AT = NOW
+
+SECTION_KEYS = {
+    "ingest": IngestSummary,
+    "ship": ShipSummary,
+    "spool": SpoolSummary,
+    "clock": ClockSummary,
+}
+
+
+def test_every_section_field_reaches_the_json() -> None:
+    """The check the hand written version did not have.
+
+    ``ShipSummary.blocked`` was counted, carried and then left out of the
+    JSON, so the number that says a site is hitting its allowance never left
+    the box. Walking the dataclasses is what stops that happening again.
+    """
+    payload = Summary(site=SITE, at=AT).as_dict()
+    for name, kind in SECTION_KEYS.items():
+        expected = {FIELD_NAMES.get(item.name, item.name) for item in fields(kind)}
+        assert set(payload[name]) == expected, name
+
+
+def test_the_blocked_count_is_in_the_summary() -> None:
+    summary = Summary(site=SITE, at=AT)
+    summary.ship.blocked = 4
+    assert summary.as_dict()["ship"]["blocked"] == 4
+
+
+def test_a_section_dict_renames_only_what_it_has_to() -> None:
+    found = section_dict(IngestSummary(files_followed=3, records=9))
+    assert found["files"] == 3
+    assert found["records"] == 9
+    assert "files_followed" not in found
+
+
+def test_the_renamed_keys_are_the_ones_the_estate_parses() -> None:
+    payload = Summary(site=SITE, at=AT).as_dict()
+    assert "files" in payload["ingest"]
+    assert "bytes" in payload["ship"]
+    assert "unknown" in payload["clock"]
+
+
+def test_a_blocked_site_still_renders_as_text() -> None:
+    summary = Summary(site=SITE, at=AT)
+    summary.ship.blocked = 2
+    assert SITE in summary.render_text()

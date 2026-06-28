@@ -22,11 +22,33 @@ so rather than printing both and leaving it to a reader who is not looking.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 from stanchion.timestamps import NanoTime
 from stanchion.units import format_bytes
+
+#: Where a field's JSON name is not its attribute name. Kept short on purpose:
+#: every entry here is a name the estate side already parses and cannot be
+#: changed, not a preference.
+FIELD_NAMES: dict[str, str] = {
+    "files_followed": "files",
+    "bytes_sent": "bytes",
+    "unknown_records": "unknown",
+}
+
+
+def section_dict(section: Any) -> dict[str, Any]:
+    """One summary section as JSON, every field of it.
+
+    Walks the dataclass rather than listing the fields, so a field added to a
+    section is in the summary the same day it is added. That is the whole
+    point: the previous version listed them and one had already been missed.
+    """
+    out: dict[str, Any] = {}
+    for item in fields(section):
+        out[FIELD_NAMES.get(item.name, item.name)] = getattr(section, item.name)
+    return out
 
 
 @dataclass(slots=True)
@@ -139,38 +161,21 @@ class Summary:
         return found
 
     def as_dict(self) -> dict[str, Any]:
+        """The shape the estate side parses.
+
+        Derived from the section dataclasses rather than written out again.
+        The hand written version had drifted: ``ShipSummary.blocked`` was
+        counted, carried, and then quietly left out of the JSON, so the one
+        number that says a site is hitting its allowance never left the box.
+        """
         return {
             "site": self.site,
             "at": self.at.isoformat(),
             "healthy": self.healthy,
-            "ingest": {
-                "files": self.ingest.files_followed,
-                "records": self.ingest.records,
-                "skipped": self.ingest.skipped,
-                "rotations": self.ingest.rotations,
-                "lost_bytes": self.ingest.lost_bytes,
-            },
-            "ship": {
-                "batches": self.ship.batches,
-                "records": self.ship.records,
-                "bytes": self.ship.bytes_sent,
-                "retryable": self.ship.retryable,
-                "terminal": self.ship.terminal,
-                "meter_used": self.ship.meter_used,
-                "meter_allowance": self.ship.meter_allowance,
-            },
-            "spool": {
-                "used": self.spool.used,
-                "limit": self.spool.limit,
-                "segments": self.spool.segments,
-                "evicted": self.spool.evicted,
-            },
-            "clock": {
-                "boots": self.clock.boots,
-                "syncs": self.clock.syncs,
-                "drift_ms": self.clock.drift_ms,
-                "unknown": self.clock.unknown_records,
-            },
+            "ingest": section_dict(self.ingest),
+            "ship": section_dict(self.ship),
+            "spool": section_dict(self.spool),
+            "clock": section_dict(self.clock),
             "redacted": dict(sorted(self.redacted.items())),
             "archived": self.archived,
             "problems": list(self.problems),
