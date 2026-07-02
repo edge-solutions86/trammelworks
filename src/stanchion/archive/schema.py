@@ -32,8 +32,33 @@ from pathlib import Path
 
 from stanchion.errors import StanchionError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUSY_TIMEOUT_MS = 5000
+
+#: Every read orders by this and most filter on it, so it is what the indexes
+#: have to be built on. They were built on ``observed_ns`` and none of them was
+#: usable: the planner cannot see that an index on a column covers an
+#: expression over that column, so the main query path was a full scan and a
+#: temporary B-tree for the sort, on an SD card, while the collector wrote.
+BEST_TIME = "COALESCE(corrected_ns, observed_ns)"
+
+INDEXES = (
+    f"CREATE INDEX IF NOT EXISTS records_by_best_time ON records ({BEST_TIME})",
+    f"CREATE INDEX IF NOT EXISTS records_by_unit_time ON records (unit, {BEST_TIME})",
+    f"CREATE INDEX IF NOT EXISTS records_by_class_time ON records (klass, {BEST_TIME})",
+    # Kept because the sweeper asks what was stored when, which is a different
+    # question from when it happened and is answered by a different column.
+    "CREATE INDEX IF NOT EXISTS records_by_stored ON records (stored_ns)",
+)
+
+#: Indexes an earlier version built that nothing can use. Dropped on upgrade
+#: rather than left: an index that is never read is still written to on every
+#: insert, and on this hardware that is the expensive half.
+RETIRED_INDEXES = (
+    "records_by_time",
+    "records_by_unit",
+    "records_by_class",
+)
 
 DDL = (
     """
@@ -52,9 +77,7 @@ DDL = (
         stored_ns     INTEGER NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS records_by_time ON records (observed_ns)",
-    "CREATE INDEX IF NOT EXISTS records_by_unit ON records (unit, observed_ns)",
-    "CREATE INDEX IF NOT EXISTS records_by_class ON records (klass, observed_ns)",
+    *INDEXES,
     """
     CREATE TABLE IF NOT EXISTS holds (
         name        TEXT PRIMARY KEY,
@@ -129,6 +152,39 @@ def create(connection: sqlite3.Connection) -> None:
         )
 
 
+def migrate(connection: sqlite3.Connection) -> int:
+    """Bring an older archive up to the current schema. Returns the version it left.
+
+    Only ever adds indexes and drops ones nothing uses, so it is safe to run on
+    a file the collector has open. There is no table rewrite here and there
+    must not be: this runs at startup on a box whose only job is to keep
+    collecting, and a migration that took the write lock for a minute would
+    stop the site to make a query faster.
+    """
+    version = read_version(connection)
+    if version >= SCHEMA_VERSION:
+        return version
+    with connection:
+        for name in RETIRED_INDEXES:
+            connection.execute(f"DROP INDEX IF EXISTS {name}")
+        for statement in INDEXES:
+            connection.execute(statement)
+        connection.execute(
+            "INSERT OR REPLACE INTO meta (name, value) VALUES ('schema_version', ?)",
+            (str(SCHEMA_VERSION),),
+        )
+    return SCHEMA_VERSION
+
+
+def index_names(connection: sqlite3.Connection) -> tuple[str, ...]:
+    """Every index on the records table, for the doctor and the tests."""
+    rows = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'records'"
+        " AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+    return tuple(str(row["name"]) for row in rows)
+
+
 def read_version(connection: sqlite3.Connection) -> int:
     """The schema version this file was written with."""
     try:
@@ -152,6 +208,7 @@ def open_archive(path: Path | str, read_only: bool = False) -> sqlite3.Connectio
     connection = connect(path, read_only=read_only)
     if not read_only:
         create(connection)
+        migrate(connection)
     version = read_version(connection)
     if version > SCHEMA_VERSION:
         connection.close()

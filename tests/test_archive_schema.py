@@ -47,9 +47,11 @@ def test_the_indexes_are_there(archive_path: Path) -> None:
         row["name"]
         for row in connection.execute("SELECT name FROM sqlite_master WHERE type='index'")
     }
-    assert "records_by_time" in names
-    assert "records_by_unit" in names
-    assert "records_by_class" in names
+    # Named for the expression they cover, because that is what the reads
+    # order by. The earlier ones were on observed_ns and no query used them.
+    assert "records_by_best_time" in names
+    assert "records_by_unit_time" in names
+    assert "records_by_class_time" in names
 
 
 def test_the_version_is_stamped(archive_path: Path) -> None:
