@@ -12,6 +12,7 @@ caught and rendered as one line with the stable error code in it.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from collections.abc import Iterator
@@ -26,7 +27,7 @@ from stanchion.archive.schema import open_archive
 from stanchion.config import SiteConfig
 from stanchion.configfile import dump_site_config, load_site_config
 from stanchion.errors import StanchionError
-from stanchion.version import VERSION
+from stanchion.version import VERSION, Build
 
 DEFAULT_CONFIG = "/etc/stanchion/site.yaml"
 
@@ -130,8 +131,16 @@ def config_command(obj: Context, check: bool) -> None:
 
 
 @cli.command("version")
-def version_command() -> None:
-    """Print the version and nothing else."""
+@click.option("--full", is_flag=True, help="Every number that identifies this build.")
+@click.option("--json", "as_json", is_flag=True, help="The same, as one object.")
+def version_command(full: bool, as_json: bool) -> None:
+    """Print the version, or everything that identifies this build."""
+    if as_json:
+        click.echo(json.dumps(Build.current().as_dict(), sort_keys=True, indent=1))
+        return
+    if full:
+        click.echo(str(Build.current()))
+        return
     click.echo(VERSION)
 
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from stanchion.archive.schema import open_archive
+from stanchion.archive.schema import SCHEMA_VERSION, open_archive
 from stanchion.cli.main import (
     EXIT_CONFIG,
     EXIT_FAILED,
@@ -20,7 +22,7 @@ from stanchion.cli.main import (
     run,
 )
 from stanchion.errors import ConfigError, QueryError, ShipError
-from stanchion.version import VERSION
+from stanchion.version import SPOOL_FORMAT, VERSION, Build
 
 SITE_YAML = """
 site: US-TX-0417
@@ -239,3 +241,36 @@ def test_a_missing_config_stops_before_the_archive(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as caught:
         reading_archive(obj, "query")
     assert caught.value.code == EXIT_CONFIG
+
+
+def test_the_version_command_prints_the_version_alone() -> None:
+    result = CliRunner().invoke(cli, ["version"])
+    assert result.output.strip() == VERSION
+
+
+def test_the_full_version_names_every_moving_number() -> None:
+    output = CliRunner().invoke(cli, ["version", "--full"]).output
+    for word in ("stanchion", "spool format", "archive", "python", "platform"):
+        assert word in output
+
+
+def test_the_full_version_is_one_fact_per_line() -> None:
+    lines = CliRunner().invoke(cli, ["version", "--full"]).output.strip().splitlines()
+    assert len(lines) == 5
+
+
+def test_the_version_can_come_back_as_json() -> None:
+    payload = json.loads(CliRunner().invoke(cli, ["version", "--json"]).output)
+    assert payload["version"] == VERSION
+    assert payload["spool_format"] == SPOOL_FORMAT
+    assert payload["archive_schema"] == SCHEMA_VERSION
+
+
+def test_the_build_reports_the_running_python() -> None:
+    built = Build.current()
+    assert built.python.startswith(f"{sys.version_info.major}.{sys.version_info.minor}")
+    assert built.platform == sys.platform
+
+
+def test_a_build_with_nothing_filled_in_still_renders() -> None:
+    assert "stanchion" in str(Build())
