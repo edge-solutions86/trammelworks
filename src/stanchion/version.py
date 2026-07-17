@@ -10,7 +10,13 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-VERSION = "0.1.0"
+VERSION = "1.0.0"
+
+#: One is not a claim that this is finished. It is a promise about the two
+#: numbers below: from here on a site running an older build can still read
+#: what a newer one wrote, or the format number moves and the release notes say
+#: what to do about it. That promise is the only thing a version means on a box
+#: nobody logs into.
 
 #: Bumped whenever the on disk spool layout changes in a way an older reader
 #: cannot understand. Independent of VERSION on purpose.

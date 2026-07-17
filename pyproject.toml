@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stanchion"
-version = "0.1.0"
+version = "1.0.0"
 description = "Container log aggregation for unattended fuel forecourt site controllers"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = { text = "Proprietary" }
 authors = [{ name = "rkaushik-dev", email = "anitalune373@gmail.com" }]
 keywords = ["forecourt", "container-logs", "cri", "log-shipping", "redaction"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3.12",
     "Topic :: System :: Logging",
@@ -31,7 +31,7 @@ dependencies = [
 stanchion = "stanchion.cli.main:run"
 
 [project.urls]
-Source = "https://github.com/rkaushik-dev/Python_container_log_aggregator"
+Source = "https://github.com/rkaushik-dev/trammelworks"
 
 [tool.setuptools.packages.find]
 where = ["src"]

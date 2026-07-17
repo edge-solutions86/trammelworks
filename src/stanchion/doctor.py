@@ -23,20 +23,23 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import tempfile
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
 from stanchion.archive.repository import Repository
-from stanchion.archive.schema import open_archive
+from stanchion.archive.schema import SCHEMA_VERSION, connect, open_archive, read_version
 from stanchion.config import SiteConfig
 from stanchion.errors import StanchionError
 from stanchion.ingest.discover import discover
 from stanchion.redact.engine import Redactor
 from stanchion.spool.budget import measure
+from stanchion.spool.frame import HEADER_SIZE, MAGIC
 from stanchion.spool.segment import list_segments
 from stanchion.units import format_bytes
+from stanchion.version import SPOOL_FORMAT, Build
 
 #: A number that is a card number, used to prove the pass actually fires.
 PROBE_PAN = "4111111111111111"
@@ -279,7 +282,80 @@ def free_space(path: Path) -> int | None:
 CROWDED = 0.8
 
 
+def check_build(config: SiteConfig, report: Report) -> None:
+    """Whether what is on this disk is what this build writes.
+
+    The version promise this project makes from 1.0.0 is about the two format
+    numbers rather than about features: a site can be upgraded in place and
+    still read what the previous build left. This is the check that says
+    whether that held, and it is the first thing worth knowing after a flash.
+
+    A spool holding segments written by a newer format is the dangerous case.
+    Those segments will not decode, the shipper will quarantine them one at a
+    time, and the site will look like it is working while it drops a shift.
+    """
+    build = Build.current()
+    report.note("build", f"stanchion {build.version}, spool format {build.spool_format}")
+    found = spool_formats(config.spool.path)
+    ahead = sorted(item for item in found if item > SPOOL_FORMAT)
+    if ahead:
+        report.fail(
+            "build",
+            f"the spool holds segments in format {ahead[0]}, this build writes {SPOOL_FORMAT}",
+        )
+    if not config.archive.enabled or not config.archive.file.exists():
+        return
+    try:
+        # connect rather than open_archive: opening refuses an archive from a
+        # newer build outright, and this check exists to say so in a sentence
+        # an engineer can act on rather than to hit the same refusal.
+        connection = connect(config.archive.file, read_only=True)
+        on_disk = read_version(connection)
+    except (StanchionError, sqlite3.Error) as exc:
+        report.fail("build", f"the archive will not say its schema: {exc}")
+        return
+    if on_disk > SCHEMA_VERSION:
+        report.fail(
+            "build",
+            f"the archive is schema {on_disk} and this build writes {SCHEMA_VERSION}",
+        )
+    elif on_disk < SCHEMA_VERSION:
+        report.warn(
+            "build",
+            f"the archive is schema {on_disk}, it upgrades to {SCHEMA_VERSION} on the next open",
+        )
+    else:
+        report.note("build", f"archive schema {on_disk}, current")
+
+
+def spool_formats(directory: Path) -> set[int]:
+    """Which frame formats the segments on disk were written in.
+
+    Reads the header of each segment rather than the whole file. The format
+    byte is the fourth byte of the first frame and that is all this needs, so a
+    spool holding a gigabyte costs one small read per segment to check.
+    """
+    found: set[int] = set()
+    try:
+        segments = list_segments(directory)
+    except OSError:
+        # The spool path is not a directory at all. That is a real fault and
+        # the spool check reports it; this one has nothing to add.
+        return found
+    for info in segments:
+        try:
+            with info.path.open("rb") as handle:
+                header = handle.read(HEADER_SIZE)
+        except OSError:
+            continue
+        if len(header) < HEADER_SIZE or header[:2] != MAGIC:
+            continue
+        found.add(header[2])
+    return found
+
+
 CHECKS = (
+    check_build,
     check_log_root,
     check_spool,
     check_redaction,
