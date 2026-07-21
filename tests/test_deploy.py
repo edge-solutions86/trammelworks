@@ -228,11 +228,31 @@ def test_the_command_prints_the_units(config_file: Path) -> None:
     assert "ExecStart=" in result.output
 
 
-def test_the_command_names_the_installed_path_by_default(config_file: Path) -> None:
-    # The working copy on a laptop is not where the file lives on the box.
+def test_the_command_names_the_config_path_it_was_invoked_with(config_file: Path) -> None:
+    """What the units name depends on whether the invoking path suits a unit.
+
+    A unit file describes a Linux box, so the path in it has to be POSIX
+    absolute. On Linux the temporary config already is one and it is used as
+    given; on Windows it is not and the command falls back to the installed
+    path with a note. Both are correct, and asserting one of them everywhere
+    is what made this test pass locally and fail on CI.
+    """
     result = invoke(config_file)
-    assert "--config /etc/stanchion/site.yaml" in result.output
-    assert "pass --config-path to change it" in result.output
+    here = str(config_file)
+    if here.startswith("/"):
+        assert f"--config {here}" in result.output
+        assert "pass --config-path" not in result.output
+    else:
+        assert "--config /etc/stanchion/site.yaml" in result.output
+        assert "pass --config-path to change it" in result.output
+
+
+def test_a_config_path_that_no_unit_could_use_falls_back(config_file: Path) -> None:
+    # Driven directly rather than through whatever the platform's temporary
+    # directory happens to look like.
+    result = invoke(config_file, "--config-path", "site.yaml")
+    assert result.exit_code != EXIT_OK
+    assert "must be absolute" in result.output
 
 
 def test_the_command_keeps_an_absolute_path_it_was_given(config_file: Path) -> None:

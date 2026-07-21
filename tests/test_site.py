@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from stanchion.archive.config import ArchiveSettings
 from stanchion.clocks import ManualClock
 from stanchion.config import IngestConfig, SiteConfig
 from stanchion.redact.config import RedactConfig
@@ -28,6 +29,10 @@ def config_for(tree: SiteTree, tmp_path: Path, **over: object) -> SiteConfig:
             directory=(tmp_path / "spool").as_posix(), budget_bytes=1_000_000, segment_bytes=4096
         ),
         "ship": ShipSettings(monthly_allowance_bytes=10_000_000),
+        # Named rather than left to default. The default is a real absolute
+        # path, and a test that leaves it writes to /var/lib on the machine
+        # running it.
+        "archive": ArchiveSettings(path=(tmp_path / "archive" / "records.sqlite3").as_posix()),
     }
     settings.update(over)
     return SiteConfig(**settings)  # type: ignore[arg-type]

@@ -32,6 +32,8 @@ def config(tmp_path: Path, tree: SiteTree, outbox: Path) -> Path:
         f"  directory: {(tmp_path / 'spool').as_posix()}\n"
         "  budget: 1MiB\n"
         "  segment: 16KiB\n"
+        "archive:\n"
+        f"  path: {(tmp_path / 'archive' / 'records.sqlite3').as_posix()}\n"
         "ship:\n"
         f"  endpoint: file://{outbox.as_posix()}\n"
         "  interval: 1s\n",
