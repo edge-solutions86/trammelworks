@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from stanchion.archive.config import ArchiveSettings
 from stanchion.clocks import ManualClock
 from stanchion.config import IngestConfig, SiteConfig
 from stanchion.errors import ConfigError
@@ -34,6 +35,8 @@ def config_for(tree: SiteTree, tmp_path: Path, **over: object) -> SiteConfig:
             compress=False,
         ),
         ship=ShipSettings(**ship),  # type: ignore[arg-type]
+        # Named rather than left to default, which is a real absolute path.
+        archive=ArchiveSettings(path=(tmp_path / "archive" / "records.sqlite3").as_posix()),
     )
 
 

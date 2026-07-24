@@ -15,7 +15,7 @@ import yaml
 
 from stanchion.config import SECTIONS, SiteConfig, site_from_mapping
 from stanchion.configfile import dump_site_config, load_site_config
-from stanchion.doctor import Level, run_checks
+from stanchion.doctor import Level, Report, check_ship, check_signing, check_space
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "site.yaml"
 
@@ -118,17 +118,32 @@ def test_the_archive_is_not_inside_the_spool(config: SiteConfig) -> None:
     config.archive.check_against_spool(config.spool.directory)
 
 
-def test_the_doctor_finds_no_configuration_faults(config: SiteConfig) -> None:
-    # The paths do not exist on this machine, so filesystem checks will
-    # complain. What must not appear is a complaint about the config itself.
-    report = run_checks(config)
-    wrong = [
-        item
-        for item in report.findings
-        if item.level is Level.FAIL and item.check in {"ship", "signing", "space"}
-    ]
-    # Only the signing key, which is a real file this machine does not have.
-    assert [item.check for item in wrong] == ["signing"]
+def test_the_example_endpoint_and_budgets_pass_the_doctor(config: SiteConfig) -> None:
+    """The config checks only, run against paths this machine does not have.
+
+    ``run_checks`` is not used here and must not be. Several of its checks
+    probe a directory by creating it, which is the right behaviour on a box
+    being commissioned and the wrong thing entirely to do to ``/var/lib`` on
+    whatever machine runs the suite. So the checks that only read the config
+    are called directly.
+    """
+    report = Report()
+    check_ship(config, report)
+    check_space(config, report)
+    failures = [item.check for item in report.findings if item.level is Level.FAIL]
+    assert failures == []
+
+
+def test_the_example_signing_is_configured_even_though_the_key_is_elsewhere(
+    config: SiteConfig,
+) -> None:
+    # The key is a real path this machine does not have, so the check fails
+    # here and would pass on a commissioned site. What matters is that the
+    # example asks for signing at all.
+    assert config.ship.signs is True
+    report = Report()
+    check_signing(config, report)
+    assert [item.check for item in report.findings] == ["signing"]
 
 
 def test_the_endpoint_is_not_the_placeholder(config: SiteConfig) -> None:

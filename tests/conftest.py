@@ -76,11 +76,18 @@ def _nothing_escapes_the_temporary_directory() -> Iterator[None]:
     and the run fails with a permission error. Same bug, and only one of the
     two platforms said so.
 
-    Checked once for the session rather than per test. It costs two stat calls
-    and it catches the whole class.
+    The check is that these paths do not exist when the run ends, not that this
+    run created them. The first version compared before against after and it
+    stayed silent, because an earlier run had already made them and every run
+    after that saw them as pre-existing. A guard that only reports the first
+    offence reports nothing.
     """
-    before = {path: path.exists() for path in DEFAULT_PATHS}
     yield
-    made = [str(path) for path, existed in before.items() if not existed and path.exists()]
-    if made:
-        raise AssertionError("the suite wrote outside its temporary directory: " + ", ".join(made))
+    found = [str(path) for path in DEFAULT_PATHS if path.exists()]
+    if found:
+        raise AssertionError(
+            "the suite wrote outside its temporary directory: "
+            + ", ".join(found)
+            + ". Name every section of a config a test builds, because the "
+            "defaults are where a real site lives."
+        )
