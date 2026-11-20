@@ -133,7 +133,6 @@
                     <compilerArgs>
                         <!-- Exceptions here are never serialized, so serial lint is noise. -->
                         <arg>-Xlint:all,-serial,-processing</arg>
-                        <arg>-Aproject=${project.groupId}/${project.artifactId}</arg>
                     </compilerArgs>
                     <failOnWarning>true</failOnWarning>
                     <annotationProcessorPaths>
