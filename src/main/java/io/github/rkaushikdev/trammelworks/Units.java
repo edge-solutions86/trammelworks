@@ -193,7 +193,7 @@ public final class Units {
     }
 
     /** How a negative or odd duration is named in an error: days, then clock time. */
-    static String describe(Duration value) {
+    public static String describe(Duration value) {
         long micros = value.getSeconds() * 1_000_000 + value.getNano() / 1_000;
         long days = Math.floorDiv(micros, 86_400_000_000L);
         long rest = Math.floorMod(micros, 86_400_000_000L);

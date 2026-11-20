@@ -48,9 +48,14 @@ public final class Samples {
 
     /** {@code EXAMPLES} values built from a seeded generator. */
     public static <T> Stream<T> drawn(long seed, Function<Random, T> draw) {
+        return drawn(seed, EXAMPLES, draw);
+    }
+
+    /** {@code count} values built from a seeded generator. */
+    public static <T> Stream<T> drawn(long seed, int count, Function<Random, T> draw) {
         Random random = random(seed);
         List<T> out = new ArrayList<>();
-        for (int index = 0; index < EXAMPLES; index++) {
+        for (int index = 0; index < count; index++) {
             out.add(draw.apply(random));
         }
         return out.stream();
