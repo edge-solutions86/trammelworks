@@ -3,6 +3,7 @@ package io.github.rkaushikdev.trammelworks;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.rkaushikdev.trammelworks.cli.CliRunner;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -237,5 +238,104 @@ class ConfigfileTest {
         SiteConfig cfg = ConfigFile.loadSiteConfig(write(SITE_YAML), Map.of());
         assertThat(ConfigFile.loadSiteConfig(write(ConfigFile.dumpSiteConfig(cfg)), Map.of()))
                 .isEqualTo(cfg);
+    }
+
+    /** A site whose labels hold non-ASCII text, including a character beyond the basic plane. */
+    static final String UNICODE_YAML = "site: US-TX-0417\n"
+            + "spool:\n"
+            + "  directory: /var/lib/stanchion/spool\n"
+            + "labels:\n"
+            + "  brand: Caf\u00E9 \u00C9t\u00E9\n"
+            + "  price: \u20AC5 a litre\n"
+            + "  smile: pump \uD83D\uDE00 ok\n"
+            + "  r\u00E9gion: sud\n"
+            + "  gap: \"a\u00A0b\u2028c\u0085d\"\n"
+            + "  quoted: '\u00E9 says \"hi\" \\\\ back'\n";
+
+    /** Its dump, byte for byte: every non-ASCII character escaped with upper case hex digits. */
+    static final String UNICODE_DUMP = "archive:\n"
+            + "  enabled: true\n"
+            + "  max_bytes: 2147483648\n"
+            + "  max_deletes: 50000\n"
+            + "  path: /var/lib/stanchion/archive/records.sqlite3\n"
+            + "  sweep_every: 21600.0\n"
+            + "ingest:\n"
+            + "  log_root: /var/log/containers\n"
+            + "  max_line_bytes: 1048576\n"
+            + "  poll_interval: 2.0\n"
+            + "  read_chunk: 65536\n"
+            + "  units: []\n"
+            + "labels:\n"
+            + "  brand: \"Caf\\xE9 \\xC9t\\xE9\"\n"
+            + "  gap: \"a\\_b\\Lc d\"\n"
+            + "  price: \"\\u20AC5 a litre\"\n"
+            + "  quoted: \"\\xE9 says \\\"hi\\\" \\\\\\\\ back\"\n"
+            + "  \"r\\xE9gion\": sud\n"
+            + "  smile: \"pump \\U0001F600 ok\"\n"
+            + "redact:\n"
+            + "  enabled: true\n"
+            + "  keep_first: 6\n"
+            + "  keep_last: 4\n"
+            + "  rules: {}\n"
+            + "ship:\n"
+            + "  anchor_day: 1\n"
+            + "  attempt_timeout: 30.0\n"
+            + "  batch: 262144\n"
+            + "  batch_records: 2000\n"
+            + "  delete_acknowledged: true\n"
+            + "  endpoint: https://collector.invalid/v1/ingest\n"
+            + "  interval: 300.0\n"
+            + "  monthly_allowance: 2000000000\n"
+            + "site: US-TX-0417\n"
+            + "spool:\n"
+            + "  budget: 536870912\n"
+            + "  compress: true\n"
+            + "  directory: /var/lib/stanchion/spool\n"
+            + "  reserve_ratio: 0.1\n"
+            + "  segment: 8388608\n"
+            + "  sync_every: 0\n";
+
+    @Test
+    void nonAsciiIsEscapedWithUpperCaseHex() throws IOException {
+        SiteConfig cfg = ConfigFile.loadSiteConfig(write(UNICODE_YAML), Map.of());
+        assertThat(ConfigFile.dumpSiteConfig(cfg)).isEqualTo(UNICODE_DUMP);
+    }
+
+    @Test
+    void theConfigCommandPrintsTheSameEscapes() throws IOException {
+        CliRunner.Result result =
+                CliRunner.invoke("--config", write(UNICODE_YAML).toString(), "config");
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.stdout()).isEqualTo(UNICODE_DUMP);
+    }
+
+    @Test
+    void anEscapedDumpLoadsBackToTheSameLabels() throws IOException {
+        SiteConfig cfg = ConfigFile.loadSiteConfig(write(UNICODE_YAML), Map.of());
+        assertThat(cfg.labels())
+                .isEqualTo(Maps.of(
+                        "brand",
+                        "Caf\u00E9 \u00C9t\u00E9",
+                        "price",
+                        "\u20AC5 a litre",
+                        "smile",
+                        "pump \uD83D\uDE00 ok",
+                        "r\u00E9gion",
+                        "sud",
+                        "gap",
+                        "a\u00A0b\u2028c d",
+                        "quoted",
+                        "\u00E9 says \"hi\" \\\\ back"));
+        assertThat(ConfigFile.loadSiteConfig(write(ConfigFile.dumpSiteConfig(cfg)), Map.of())
+                        .labels())
+                .isEqualTo(cfg.labels());
+    }
+
+    @Test
+    void aBackslashOutsideADoubleQuotedScalarIsLeftAlone() {
+        // Only the double quoted scalar holds escapes; its escaped backslash before xcd is not one.
+        String text = "pattern: 'driver=(\\d{4}) \\xab'\nplain: a\\xab\nquoted: \"\\xab \\\\xcd\"\n";
+        assertThat(ConfigFile.upperCaseEscapes(text))
+                .isEqualTo("pattern: 'driver=(\\d{4}) \\xab'\nplain: a\\xab\nquoted: \"\\xAB \\\\xcd\"\n");
     }
 }

@@ -1,6 +1,7 @@
 package io.github.rkaushikdev.trammelworks;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -16,6 +17,8 @@ import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.error.YAMLException;
+import org.yaml.snakeyaml.events.Event;
+import org.yaml.snakeyaml.events.ScalarEvent;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
@@ -143,7 +146,47 @@ public final class ConfigFile {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setAllowUnicode(false);
-        return new Yaml(new PlainConstructor(), new PlainRepresenter(options), options).dump(sorted(config.asDict()));
+        String dumped =
+                new Yaml(new PlainConstructor(), new PlainRepresenter(options), options).dump(sorted(config.asDict()));
+        return upperCaseEscapes(dumped);
+    }
+
+    /**
+     * The dump with every hex escape in its double quoted scalars written in upper case: a
+     * backslash, then {@code x}, {@code u} or {@code U}, then two, four or eight hex digits, so an
+     * e acute is {@code xE9} after its backslash and a character beyond the basic plane takes eight
+     * digits. The dump is ASCII only, so a character outside ASCII always lands in a double quoted
+     * scalar as one of those escapes. The scalars are found by reading the dump back, so a
+     * backslash in a plain or single quoted value is left alone.
+     */
+    static String upperCaseEscapes(String text) {
+        StringBuilder out = new StringBuilder(text);
+        for (Event event : new Yaml(new PlainConstructor()).parse(new StringReader(text))) {
+            if (!(event instanceof ScalarEvent scalar) || !scalar.isDQuoted()) {
+                continue;
+            }
+            int start = text.offsetByCodePoints(0, scalar.getStartMark().getIndex());
+            int end = text.offsetByCodePoints(0, scalar.getEndMark().getIndex());
+            int index = start;
+            while (index < end) {
+                if (text.charAt(index) != '\\' || index + 1 >= end) {
+                    index += 1;
+                    continue;
+                }
+                int digits =
+                        switch (text.charAt(index + 1)) {
+                            case 'x' -> 2;
+                            case 'u' -> 4;
+                            case 'U' -> 8;
+                            default -> 0;
+                        };
+                for (int at = index + 2; at < Math.min(index + 2 + digits, end); at++) {
+                    out.setCharAt(at, Character.toUpperCase(text.charAt(at)));
+                }
+                index += 2 + digits;
+            }
+        }
+        return out.toString();
     }
 
     private static Object sorted(Object value) {
