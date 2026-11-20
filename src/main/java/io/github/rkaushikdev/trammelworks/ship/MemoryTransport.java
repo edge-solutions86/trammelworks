@@ -11,7 +11,7 @@ public class MemoryTransport implements Transport {
 
     private final Deque<Response> script = new ArrayDeque<>();
     private final List<Batch> received = new ArrayList<>();
-    private final Response fallback;
+    private Response fallback;
 
     /** A transport that accepts everything. */
     public MemoryTransport() {
@@ -33,6 +33,11 @@ public class MemoryTransport implements Transport {
     public void script(List<Response> replacement) {
         script.clear();
         script.addAll(replacement);
+    }
+
+    /** Answer with {@code value} once the script runs out. */
+    public void fallback(Response value) {
+        fallback = value;
     }
 
     /** Every batch sent, in order. */

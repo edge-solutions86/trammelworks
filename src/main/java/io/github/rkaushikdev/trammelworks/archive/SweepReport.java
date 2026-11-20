@@ -13,6 +13,17 @@ public final class SweepReport {
     private final Map<String, Long> byClass = new LinkedHashMap<>();
     private boolean capped;
 
+    /** A sweep that found nothing. */
+    public SweepReport() {}
+
+    /** A report with the totals given, for a caller that counted them itself. */
+    public SweepReport(long examined, long deleted, long held, boolean capped) {
+        this.examined = examined;
+        this.deleted = deleted;
+        this.held = held;
+        this.capped = capped;
+    }
+
     /** Rows looked at. */
     public long examined() {
         return examined;
