@@ -57,6 +57,23 @@ public final class Coerce {
         throw new ConfigError("not a whole number", text);
     }
 
+    /**
+     * An integer written as text the way the reference integer parser reads it: surrounding
+     * whitespace allowed, an optional sign, digits with single underscores between them.
+     */
+    public static java.util.OptionalLong integral(String text) {
+        String cleaned = text.strip();
+        if (!cleaned.matches("[+-]?\\d+(?:_\\d+)*")) {
+            return java.util.OptionalLong.empty();
+        }
+        try {
+            return java.util.OptionalLong.of(
+                    Long.parseLong(cleaned.replace("_", "").replace("+", "")));
+        } catch (NumberFormatException exc) {
+            return java.util.OptionalLong.empty();
+        }
+    }
+
     /** A float. */
     public static double toDouble(Object raw) {
         return switch (raw) {
