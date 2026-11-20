@@ -9,7 +9,7 @@ import java.util.Map;
  *
  * <p>A config value arrives as whatever the YAML parser or an environment override made of it, so
  * {@code keep_last: 4}, {@code keep_last: "4"} and an override of {@code 4} all have to read as
- * four. The conversions follow the original tooling's rules (a string like {@code " 21 "} is a
+ * four. The conversions follow fixed rules (a string like {@code " 21 "} is a
  * number, {@code 3.9} truncates to 3, any non-empty string is true), and a value that cannot be
  * converted is a {@link ConfigError} naming what was there.
  */
@@ -58,8 +58,7 @@ public final class Coerce {
     }
 
     /**
-     * An integer written as text the way the reference integer parser reads it: surrounding
-     * whitespace allowed, an optional sign, digits with single underscores between them.
+     * An integer written as text: surrounding whitespace allowed, an optional sign, digits with single underscores between them.
      */
     public static java.util.OptionalLong integral(String text) {
         String cleaned = Text.strip(text);

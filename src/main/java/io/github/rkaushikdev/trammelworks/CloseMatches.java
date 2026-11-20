@@ -12,9 +12,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * The nearest known word to a misspelt one, by the same similarity ratio the reference
- * {@code difflib} uses: twice the matched characters over the combined length, with matches found
- * by repeatedly taking the longest common block.
+ * The nearest known word to a misspelt one, by the Ratcliff/Obershelp similarity ratio: twice the
+ * matched characters over the combined length, with matches found by repeatedly taking the longest
+ * common block.
  *
  * <p>The ratio has to be that one exactly, because the cutoff of 0.6 was tuned against it and a
  * different measure suggests different keys.

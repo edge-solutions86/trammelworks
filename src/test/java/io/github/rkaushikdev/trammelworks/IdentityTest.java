@@ -184,7 +184,7 @@ class IdentityTest {
 
     @Test
     void recordKeyMatchesTheDigestTheCollectorComputes() {
-        // Pinned against the reference implementation, so a Java site and the collector agree.
+        // Pinned to the key the collector computes, so the site and the collector agree.
         assertThat(Identity.recordKey(record())).isEqualTo(REFERENCE_KEY);
     }
 

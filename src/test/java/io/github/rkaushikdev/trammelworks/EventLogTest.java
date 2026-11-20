@@ -181,7 +181,7 @@ class EventLogTest {
     }
 
     @Test
-    void unserializableValuesFallBackToStr() {
+    void unserializableValuesFallBackToTheirText() {
         EventLog log = logAt();
         log.info("odd", "value", new Object());
         assertThat((String) log.records().get(0).get("value")).startsWith("java.lang.Object@");

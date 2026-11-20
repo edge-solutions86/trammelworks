@@ -36,7 +36,7 @@ class ErrorsTest {
     }
 
     @Test
-    void detailIsAppendedToStr() {
+    void detailIsAppendedToTheMessage() {
         StanchionError err = new StanchionError("spool is full", "segment 41");
         assertThat(err.getMessage()).isEqualTo("spool is full (segment 41)");
     }

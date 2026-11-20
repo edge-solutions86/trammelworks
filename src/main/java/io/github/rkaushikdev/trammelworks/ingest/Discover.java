@@ -33,7 +33,7 @@ public final class Discover {
     /** Which layout wins when two describe the same container. */
     public static final List<Layout> LAYOUT_PREFERENCE = List.of(Layout.CRI, Layout.FLAT, Layout.DOCKER);
 
-    /** Orders paths component by component, the way the reference sorts them. */
+    /** Orders paths component by component, so a directory's files stay together. */
     public static final Comparator<Path> PATH_ORDER = (left, right) -> {
         int count = Math.min(left.getNameCount(), right.getNameCount());
         for (int index = 0; index < count; index++) {

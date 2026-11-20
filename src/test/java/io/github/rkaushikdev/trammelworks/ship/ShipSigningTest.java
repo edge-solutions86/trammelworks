@@ -160,7 +160,7 @@ class ShipSigningTest {
 
     @Test
     void theSignatureMatchesTheDigestTheCollectorComputes() {
-        // Pinned against the reference implementation, so the collector accepts a Java site's batches.
+        // Pinned to the digest the collector computes, so the collector accepts the site's batches.
         assertThat(Signing.sign(key, SITE, "abcd", bytes("{}"), NOW).digest()).isEqualTo(REFERENCE_DIGEST);
     }
 

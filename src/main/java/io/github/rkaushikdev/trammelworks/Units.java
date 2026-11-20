@@ -209,7 +209,7 @@ public final class Units {
         return days + (Math.abs(days) == 1 ? " day, " : " days, ") + clock;
     }
 
-    /** Floor division of two doubles exactly as the reference float arithmetic does it. */
+    /** Floor division of two doubles: the quotient rounds down and the remainder takes the divisor's sign. */
     static double floorDivide(double numerator, double denominator) {
         double mod = numerator % denominator;
         double div = (numerator - mod) / denominator;

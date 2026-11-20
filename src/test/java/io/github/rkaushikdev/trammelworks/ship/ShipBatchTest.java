@@ -152,7 +152,7 @@ class ShipBatchTest {
 
     @Test
     void theBatchIdMatchesTheDigestTheCollectorComputes() {
-        // Pinned against the reference implementation, so a Java site and the collector agree.
+        // Pinned to the id the collector computes, so the site and the collector agree.
         assertThat(new Batch(SITE, List.of(record(0)), "000000000041-payment.spool").batchId())
                 .isEqualTo(REFERENCE_ID);
     }

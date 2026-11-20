@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-/** The encoder, repr and hash helpers, pinned against output from the reference toolchain. */
+/** The encoder, quoting and hash helpers, pinned to the exact bytes the collector expects. */
 class JsonTest {
 
     static Map<String, Object> sample() {

@@ -12,7 +12,7 @@ import java.util.function.Function;
  * JSON in exactly the shape the rest of the estate expects it.
  *
  * <p>Batch ids, signatures and spool frames are computed over JSON bytes, and the collector
- * recomputes them, so the encoder here reproduces the reference serializer byte for byte: ASCII
+ * recomputes them, so the encoder here reproduces the collector's encoding byte for byte: ASCII
  * only output with {@code \\uXXXX} escapes, the same default separators, optional sorted keys and
  * indentation, and the shortest round-tripping float form ({@code 1e-05}, {@code 10.0}).
  *
@@ -223,7 +223,7 @@ public final class Json {
         }
     }
 
-    /** Compare by code point, which is how the reference sorts keys. */
+    /** Compare by code point, which is how sorted keys are ordered. */
     public static int compareCodePoints(String left, String right) {
         int i = 0;
         int j = 0;
@@ -239,7 +239,7 @@ public final class Json {
         return Integer.compare(left.length() - i, right.length() - j);
     }
 
-    /** A float the way the reference writes it, including the three non-finite spellings. */
+    /** A float the way the collector writes it, including the three non-finite spellings. */
     public static String floatText(double value) {
         if (Double.isNaN(value)) {
             return "NaN";

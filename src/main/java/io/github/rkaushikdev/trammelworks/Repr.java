@@ -6,7 +6,7 @@ import java.math.RoundingMode;
 /**
  * Text renderings that operators and the estate already parse.
  *
- * <p>Error messages quote names the way the original tooling did ({@code 'pump-bridge'}), floats
+ * <p>Error messages quote names in single quotes ({@code 'pump-bridge'}), floats
  * print in their shortest round-tripping form ({@code 0.25}, {@code 1e-05}), and fixed-point
  * figures round the exact binary value half to even. Java's own formatting differs on every one of
  * those, so the conversions live here.
@@ -56,7 +56,7 @@ public final class Repr {
                 && type != Character.SPACE_SEPARATOR;
     }
 
-    /** The shortest text that reads back as the same double, in the reference spelling. */
+    /** The shortest text that reads back as the same double, in the estate's spelling. */
     public static String of(double value) {
         if (Double.isNaN(value)) {
             return "nan";

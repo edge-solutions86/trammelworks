@@ -148,10 +148,8 @@ class RecordsTest {
     }
 
     @Test
-    void aFragmentCarryingLabelsIsNoLongerHashable() {
-        // The reference refused to hash a fragment once it carried a mapping. A Java record always
-        // hashes, so what is pinned here is the contract that replaces it: the labels take part in
-        // the hash exactly as they take part in equality. See PROGRESS open items.
+    void aFragmentCarryingLabelsHashesByThem() {
+        // The labels take part in the hash exactly as they take part in equality.
         Fragment plain = new Fragment(ts(), Stream.STDOUT, "hi", ref());
         Fragment tagged = plain.withLabels(Map.of("boot_id", "b".repeat(32)));
         assertThat(tagged.hashCode())

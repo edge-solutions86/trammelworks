@@ -10,7 +10,7 @@ import java.util.regex.PatternSyntaxException;
 /**
  * A regular expression as a commissioning engineer writes it in a site config.
  *
- * <p>Site configs were written for the original toolchain, so their patterns use its dialect:
+ * <p>Site config patterns use a dialect of their own:
  * {@code (?P<name>...)} groups, {@code (?P=name)} back references, {@code \Z}, {@code {,n}}
  * quantifiers, literal brackets inside a class, and Unicode aware {@code \d}, {@code \w}, {@code
  * \s} and {@code \b}. This translates that dialect into a {@link Pattern} and keeps the group names

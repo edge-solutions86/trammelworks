@@ -116,7 +116,7 @@ public final class JsonFiles {
         return ReadResult.of(mapping);
     }
 
-    /** Whether a decoded JSON value equals an integer the way the reference compares them. */
+    /** Whether a decoded JSON value equals an integer: a whole float or a boolean counts too. */
     public static boolean sameNumber(Object value, long expected) {
         return switch (value) {
             case Long found -> found == expected;
