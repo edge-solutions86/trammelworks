@@ -1,7 +1,21 @@
+# Java
+target/
+build/
+.gradle/
+.idea/
+*.iml
+out/
+
+# Runtime state a local run leaves behind
+*.spool
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Python, until the original sources are removed
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
 dist/
 .venv/
 .mypy_cache/
@@ -11,5 +25,3 @@ dist/
 .coverage
 coverage.xml
 htmlcov/
-*.spool
-*.sqlite3
