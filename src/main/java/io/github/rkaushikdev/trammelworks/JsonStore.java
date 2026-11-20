@@ -43,6 +43,11 @@ public final class JsonStore {
         return corrupt;
     }
 
+    /** Count a file that parsed but did not hold what its reader needed. */
+    public void noteCorrupt() {
+        corrupt++;
+    }
+
     /** The stored mapping, or empty when there is nothing usable. */
     public Optional<Map<String, Object>> load() {
         ReadResult found = JsonFiles.readJson(path, version);
