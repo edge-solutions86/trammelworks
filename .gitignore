@@ -12,17 +12,5 @@ out/
 *.sqlite3-wal
 *.sqlite3-shm
 
-# Python, until the original sources are removed
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.venv/
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-.hypothesis/
-.coverage
-coverage.xml
-htmlcov/
+# The archive fixture a test opens
 !src/test/resources/archive/schema-v1-records.sqlite3
