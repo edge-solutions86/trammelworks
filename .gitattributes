@@ -4,3 +4,4 @@ mvnw text eol=lf
 *.bat text eol=crlf
 *.png binary
 *.gz binary
+*.sqlite3 binary

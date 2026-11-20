@@ -25,3 +25,4 @@ dist/
 .coverage
 coverage.xml
 htmlcov/
+!src/test/resources/archive/schema-v1-records.sqlite3
