@@ -49,6 +49,11 @@ final class CountCommand implements Callable<Integer> {
      * A row of blocks in proportion to the biggest group, one block minimum for anything that
      * happened at all: a group rounding to no bar reads as a group with no records.
      */
+    static String bar(long count, long largest) {
+        return bar(count, largest, BAR_WIDTH);
+    }
+
+    /** A bar {@code width} blocks at most. */
     static String bar(long count, long largest, int width) {
         if (largest < 1 || count < 1) {
             return "";
@@ -59,8 +64,7 @@ final class CountCommand implements Callable<Integer> {
 
     static String renderGroup(Group item, long largest, boolean asTime) {
         String key = asTime ? new NanoTime(Long.parseLong(item.key())).isoformat() : item.key();
-        return Columns.left(key, KEY_WIDTH) + " " + Columns.right(item.count(), 8) + "  "
-                + bar(item.count(), largest, BAR_WIDTH);
+        return Columns.left(key, KEY_WIDTH) + " " + Columns.right(item.count(), 8) + "  " + bar(item.count(), largest);
     }
 
     static List<String> render(Tally tally, boolean asTime) {
