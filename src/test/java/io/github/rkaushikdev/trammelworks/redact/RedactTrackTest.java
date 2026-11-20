@@ -156,7 +156,7 @@ class RedactTrackTest {
 
     @Test
     void stripTakesAReplacementString() {
-        assertThat(Stripes.stripSecrets("cvv=123", "XXX")).isEqualTo("cvv=XXX");
+        assertThat(Stripes.stripSecrets("cvv=123", "###")).isEqualTo("cvv=###");
     }
 
     @Test

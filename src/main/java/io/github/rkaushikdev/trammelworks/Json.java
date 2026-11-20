@@ -13,7 +13,7 @@ import java.util.function.Function;
  *
  * <p>Batch ids, signatures and spool frames are computed over JSON bytes, and the collector
  * recomputes them, so the encoder here reproduces the collector's encoding byte for byte: ASCII
- * only output with {@code \\uXXXX} escapes, the same default separators, optional sorted keys and
+ * only output with {@code \\u} escapes of four hex digits, the same default separators, optional sorted keys and
  * indentation, and the shortest round-tripping float form ({@code 1e-05}, {@code 10.0}).
  *
  * <p>Decoding returns plain Java values: {@link LinkedHashMap} for objects (insertion ordered,
@@ -455,12 +455,12 @@ public final class Json {
 
         private char unicode() {
             if (position + 4 > text.length()) {
-                throw new JsonException("Invalid \\uXXXX escape", position - 1);
+                throw new JsonException("Invalid \\u escape, four hex digits are needed", position - 1);
             }
             String hex = text.substring(position, position + 4);
             for (char h : hex.toCharArray()) {
                 if (Character.digit(h, 16) < 0) {
-                    throw new JsonException("Invalid \\uXXXX escape", position - 1);
+                    throw new JsonException("Invalid \\u escape, four hex digits are needed", position - 1);
                 }
             }
             position += 4;
