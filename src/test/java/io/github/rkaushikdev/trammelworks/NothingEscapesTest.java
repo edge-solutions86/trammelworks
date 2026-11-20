@@ -32,4 +32,11 @@ class NothingEscapesTest {
         assertThat(NothingEscapesTheTemporaryDirectory.present(List.of(tmp.resolve("absent"))))
                 .isEmpty();
     }
+
+    @Test
+    void temporaryDirectoriesCarryNoDigits() {
+        // A digit run in a path can read as a card number in a payload scan.
+        assertThat(tmp.getFileName().toString()).startsWith("stanchion-test-").doesNotContainPattern("[0-9]");
+        assertThat(LetterTempDirFactory.letters(40)).matches("[a-z]{40}");
+    }
 }

@@ -48,10 +48,9 @@ public final class Parser {
 
     /** Read either a duration back from now, or an absolute timestamp, as nanoseconds. */
     public static long parseInstant(String text, NanoTime now) {
-        try {
-            return NanoTime.parse(text).epochNs();
-        } catch (ParseError | QueryError exc) {
-            // Not a timestamp, so it has to be a duration.
+        Optional<NanoTime> stamp = timestamp(text);
+        if (stamp.isPresent()) {
+            return stamp.get().epochNs();
         }
         Duration window;
         try {
@@ -60,6 +59,15 @@ public final class Parser {
             throw new QueryError("not a time or a duration", text, exc);
         }
         return now.shifted(-(long) (Units.totalSeconds(window) * NS_PER_SECOND)).epochNs();
+    }
+
+    /** The text as an absolute timestamp, or empty when it is not one. */
+    private static Optional<NanoTime> timestamp(String text) {
+        try {
+            return Optional.of(NanoTime.parse(text));
+        } catch (ParseError | QueryError exc) {
+            return Optional.empty();
+        }
     }
 
     /** The token being looked at. */
