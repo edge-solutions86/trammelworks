@@ -46,7 +46,7 @@ public final class Coerce {
     }
 
     private static long parseInteger(String text) {
-        String cleaned = text.strip();
+        String cleaned = Text.strip(text);
         if (cleaned.matches("[+-]?\\d+(?:_\\d+)*")) {
             try {
                 return Long.parseLong(cleaned.replace("_", "").replace("+", ""));
@@ -62,7 +62,7 @@ public final class Coerce {
      * whitespace allowed, an optional sign, digits with single underscores between them.
      */
     public static java.util.OptionalLong integral(String text) {
-        String cleaned = text.strip();
+        String cleaned = Text.strip(text);
         if (!cleaned.matches("[+-]?\\d+(?:_\\d+)*")) {
             return java.util.OptionalLong.empty();
         }
@@ -81,7 +81,7 @@ public final class Coerce {
             case Number value -> value.doubleValue();
             case String text -> {
                 try {
-                    yield Double.parseDouble(text.strip().replace("_", ""));
+                    yield Double.parseDouble(Text.strip(text).replace("_", ""));
                 } catch (NumberFormatException exc) {
                     throw new ConfigError("not a number", text);
                 }

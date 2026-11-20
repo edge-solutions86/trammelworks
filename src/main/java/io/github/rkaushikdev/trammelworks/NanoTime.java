@@ -42,7 +42,7 @@ public record NanoTime(long epochNs) implements Comparable<NanoTime> {
 
     /** Parse an RFC3339 timestamp with zero to nine fractional digits. */
     public static NanoTime parse(String raw) {
-        Matcher match = RFC3339.matcher(raw.strip());
+        Matcher match = RFC3339.matcher(Text.strip(raw));
         if (!match.find()) {
             throw new ParseError("malformed rfc3339 timestamp", raw);
         }

@@ -1,5 +1,6 @@
 package io.github.rkaushikdev.trammelworks.ingest;
 
+import io.github.rkaushikdev.trammelworks.Bytes;
 import io.github.rkaushikdev.trammelworks.Coerce;
 import io.github.rkaushikdev.trammelworks.Json;
 import io.github.rkaushikdev.trammelworks.Maps;

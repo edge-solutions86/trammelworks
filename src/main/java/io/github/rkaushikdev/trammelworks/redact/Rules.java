@@ -3,6 +3,7 @@ package io.github.rkaushikdev.trammelworks.redact;
 import io.github.rkaushikdev.trammelworks.Coerce;
 import io.github.rkaushikdev.trammelworks.ConfigError;
 import io.github.rkaushikdev.trammelworks.Sections;
+import io.github.rkaushikdev.trammelworks.Text;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +67,7 @@ public final class Rules {
             throw new ConfigError("rule has no pattern", name);
         }
         Object actionRaw = raw.containsKey("action") ? raw.get("action") : Action.DROP.value();
-        String actionText = Coerce.text(actionRaw).strip().toLowerCase(Locale.ROOT);
+        String actionText = Text.strip(Coerce.text(actionRaw)).toLowerCase(Locale.ROOT);
         Action action =
                 Action.fromValue(actionText).orElseThrow(() -> new ConfigError("unknown rule action", actionText));
         return new Rule(

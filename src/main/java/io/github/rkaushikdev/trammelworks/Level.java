@@ -29,7 +29,7 @@ public enum Level {
 
     /** Read a level by name, forgiving case and padding. */
     public static Level parse(String raw) {
-        String cleaned = raw.strip().toUpperCase(Locale.ROOT);
+        String cleaned = Text.strip(raw).toUpperCase(Locale.ROOT);
         for (Level level : values()) {
             if (level.name().equals(cleaned)) {
                 return level;

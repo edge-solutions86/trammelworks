@@ -1,5 +1,6 @@
 package io.github.rkaushikdev.trammelworks.ingest;
 
+import io.github.rkaushikdev.trammelworks.Bytes;
 import io.github.rkaushikdev.trammelworks.ParseError;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;

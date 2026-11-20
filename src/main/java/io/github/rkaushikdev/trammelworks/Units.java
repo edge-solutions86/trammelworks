@@ -65,7 +65,7 @@ public final class Units {
 
     /** Parse {@code 512MiB}, {@code 1.5 GB} or a bare integer into a byte count. */
     public static long parseBytes(String raw) {
-        Matcher match = BYTES.matcher(raw.strip().toLowerCase(Locale.ROOT));
+        Matcher match = BYTES.matcher(Text.strip(raw).toLowerCase(Locale.ROOT));
         if (!match.find()) {
             throw new ConfigError("malformed byte size", raw);
         }
@@ -120,7 +120,7 @@ public final class Units {
 
     /** Parse {@code 90s}, {@code 2h30m} or a bare number of seconds. */
     public static Duration parseDuration(String raw) {
-        String text = raw.strip().toLowerCase(Locale.ROOT).replace(" ", "");
+        String text = Text.strip(raw).toLowerCase(Locale.ROOT).replace(" ", "");
         if (text.isEmpty()) {
             throw new ConfigError("empty duration", raw);
         }

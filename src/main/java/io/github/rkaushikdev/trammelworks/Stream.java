@@ -22,7 +22,7 @@ public enum Stream implements Json.Valued {
 
     /** Read a stream name, forgiving case and padding. */
     public static Stream parse(String raw) {
-        String cleaned = raw.strip().toLowerCase(Locale.ROOT);
+        String cleaned = Text.strip(raw).toLowerCase(Locale.ROOT);
         for (Stream member : values()) {
             if (member.value.equals(cleaned)) {
                 return member;

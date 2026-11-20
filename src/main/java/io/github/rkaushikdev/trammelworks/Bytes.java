@@ -1,4 +1,4 @@
-package io.github.rkaushikdev.trammelworks.ingest;
+package io.github.rkaushikdev.trammelworks;
 
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;

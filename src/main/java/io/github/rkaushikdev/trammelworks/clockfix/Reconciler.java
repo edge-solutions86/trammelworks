@@ -3,6 +3,7 @@ package io.github.rkaushikdev.trammelworks.clockfix;
 import io.github.rkaushikdev.trammelworks.Clock;
 import io.github.rkaushikdev.trammelworks.LogRecord;
 import io.github.rkaushikdev.trammelworks.NanoTime;
+import io.github.rkaushikdev.trammelworks.Text;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +66,7 @@ public final class Reconciler {
     public LogRecord reconcile(LogRecord record) {
         String stated = record.labels().get(MONOTONIC_LABEL);
         boolean exact = stated != null;
-        long position = exact ? Long.parseLong(stated.strip()) : positionOf(record.observedAt());
+        long position = exact ? Long.parseLong(Text.strip(stated)) : positionOf(record.observedAt());
         Correction correction = model().correctionAt(position);
         stats.note(correction, exact);
         Map<String, String> labels = new LinkedHashMap<>(record.labels());

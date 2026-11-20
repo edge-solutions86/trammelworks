@@ -37,7 +37,7 @@ public final class Identity {
 
     /** Validate and normalize a site identifier. */
     public static String parseSite(String raw) {
-        String cleaned = raw.strip().toUpperCase(Locale.ROOT);
+        String cleaned = Text.strip(raw).toUpperCase(Locale.ROOT);
         if (!SITE_PATTERN.matcher(cleaned).find()) {
             throw new ConfigError("malformed site id", raw);
         }
@@ -46,7 +46,7 @@ public final class Identity {
 
     /** Validate a unit name. */
     public static String parseUnit(String raw) {
-        String cleaned = raw.strip().toLowerCase(Locale.ROOT);
+        String cleaned = Text.strip(raw).toLowerCase(Locale.ROOT);
         if (!UNIT_PATTERN.matcher(cleaned).find()) {
             throw new ConfigError("malformed unit name", raw);
         }
@@ -55,7 +55,7 @@ public final class Identity {
 
     /** Shorten a full container id the way the runtime does. */
     public static String shortId(String containerId) {
-        String cleaned = containerId.strip().toLowerCase(Locale.ROOT);
+        String cleaned = Text.strip(containerId).toLowerCase(Locale.ROOT);
         if (!CONTAINER_ID_PATTERN.matcher(cleaned).find()) {
             throw new ConfigError("malformed container id", containerId);
         }

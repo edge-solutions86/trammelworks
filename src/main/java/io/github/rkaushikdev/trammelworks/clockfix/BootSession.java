@@ -1,6 +1,7 @@
 package io.github.rkaushikdev.trammelworks.clockfix;
 
 import io.github.rkaushikdev.trammelworks.ConfigError;
+import io.github.rkaushikdev.trammelworks.Text;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -47,7 +48,7 @@ public final class BootSession {
 
     /** Normalize a boot id: dashes out, lower case, 32 hex characters. */
     public static String parseBootId(String raw) {
-        String cleaned = raw.strip().toLowerCase(Locale.ROOT).replace("-", "");
+        String cleaned = Text.strip(raw).toLowerCase(Locale.ROOT).replace("-", "");
         if (!BOOT_ID_PATTERN.matcher(cleaned).find()) {
             throw new ConfigError("malformed boot id", raw);
         }

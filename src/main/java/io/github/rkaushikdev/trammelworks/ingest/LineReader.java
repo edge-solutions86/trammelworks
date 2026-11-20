@@ -1,5 +1,6 @@
 package io.github.rkaushikdev.trammelworks.ingest;
 
+import io.github.rkaushikdev.trammelworks.Bytes;
 import io.github.rkaushikdev.trammelworks.Fragment;
 import io.github.rkaushikdev.trammelworks.ParseError;
 import io.github.rkaushikdev.trammelworks.SourceRef;

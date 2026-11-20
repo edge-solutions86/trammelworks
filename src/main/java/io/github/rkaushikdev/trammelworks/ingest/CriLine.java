@@ -1,5 +1,6 @@
 package io.github.rkaushikdev.trammelworks.ingest;
 
+import io.github.rkaushikdev.trammelworks.Bytes;
 import io.github.rkaushikdev.trammelworks.NanoTime;
 import io.github.rkaushikdev.trammelworks.ParseError;
 import io.github.rkaushikdev.trammelworks.Stream;

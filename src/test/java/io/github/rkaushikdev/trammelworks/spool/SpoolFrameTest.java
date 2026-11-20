@@ -262,4 +262,18 @@ class SpoolFrameTest {
         assertThat(Frames.decodeFrame(Frames.encodeFrame(payload)).frame().payload())
                 .isEqualTo(payload);
     }
+
+    /** A deflated frame as the original toolchain wrote it to a site's spool. */
+    static final String REFERENCE_FRAME =
+            "53500101ae000000789ced91dd0ac2300c855f65e47a956e2ac25e43055164746dd4b12e1dfd5164ecdd4d2ff616865ce4e47ce4e264066d9d1e5aede8d11b248dd040a281dc87a004ab3ab4019a193c1aa5231ab62b584a183104f5ccb44af155a869f2ee8da6f8ab55717cae0be8796e55e4a06a59ef85dc0ab93b55752325f746ae75653cf431077a3e8ad385a9ea90772e798dfc82db9d45f4a8464642342e45b613f5f9f4a4be235214037a420bcb0f5a2fa55a449d831c";
+
+    @Test
+    void aFrameWrittenByTheOriginalToolchainStillReads() {
+        // A site upgraded in place keeps its spool; the segments already on disk must decode.
+        Frame frame = Frames.decodeFrame(java.util.HexFormat.of().parseHex(REFERENCE_FRAME))
+                .frame();
+        assertThat(frame.compressed()).isTrue();
+        assertThat(frame.payload().get("message")).isEqualTo("auth approved ".repeat(20));
+        assertThat(frame.payload().get("labels")).isEqualTo(Map.of("redacted", "1"));
+    }
 }
