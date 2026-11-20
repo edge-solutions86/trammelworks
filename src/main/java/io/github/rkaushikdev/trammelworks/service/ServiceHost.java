@@ -39,6 +39,7 @@ public final class ServiceHost {
     private HttpServer server;
     private ExecutorService workers;
     private CountDownLatch stopped;
+    private CountDownLatch answered;
 
     /** A host with every collaborator given. */
     public ServiceHost(SiteConfig config, ServerSettings settings, Clock clock, EventLog events, Registry metrics) {
@@ -78,6 +79,7 @@ public final class ServiceHost {
         server.setExecutor(workers);
         server.createContext("/", this::exchange);
         stopped = new CountDownLatch(1);
+        answered = new CountDownLatch(1);
         return server;
     }
 
@@ -96,6 +98,20 @@ public final class ServiceHost {
     public void serveForever() throws InterruptedException {
         start();
         CountDownLatch waiting = stopped;
+        try {
+            waiting.await();
+        } finally {
+            close();
+        }
+    }
+
+    /**
+     * Answer exactly one request and stop. That is how the install check works: start it, ask it
+     * for {@code /health}, and know the service can run on this box before a unit file tries it.
+     */
+    public void serveOnce() throws InterruptedException {
+        start();
+        CountDownLatch waiting = answered;
         try {
             waiting.await();
         } finally {
@@ -127,6 +143,11 @@ public final class ServiceHost {
                 }
             }
             events.debug("http", "line", method + " " + request.path() + " " + answer.status());
+        } finally {
+            CountDownLatch done = answered;
+            if (done != null) {
+                done.countDown();
+            }
         }
     }
 
