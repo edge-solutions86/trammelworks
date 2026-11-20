@@ -1,5 +1,10 @@
 # stanchion
 
+[![CI](https://github.com/rkaushik-dev/trammelworks/actions/workflows/ci.yml/badge.svg)](https://github.com/rkaushik-dev/trammelworks/actions/workflows/ci.yml)
+![Java 21](https://img.shields.io/badge/Java-21-007396)
+![Maven](https://img.shields.io/badge/build-Maven-C71A36)
+![JUnit 5](https://img.shields.io/badge/tests-JUnit%205-25A162)
+
 Container log aggregation for unattended fuel forecourt site controllers.
 
 A forecourt site controller is a small industrial PC under the shop counter. It
