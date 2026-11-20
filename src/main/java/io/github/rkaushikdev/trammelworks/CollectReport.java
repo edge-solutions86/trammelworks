@@ -13,6 +13,13 @@ public final class CollectReport {
     /** A pass that moved nothing. */
     public CollectReport() {}
 
+    /** A report with the totals given, for a caller that counted them itself. */
+    public CollectReport(long read, long shippedToSpool, long redacted) {
+        this.read = read;
+        this.shippedToSpool = shippedToSpool;
+        this.redacted = redacted;
+    }
+
     /** Records read. */
     public long read() {
         return read;

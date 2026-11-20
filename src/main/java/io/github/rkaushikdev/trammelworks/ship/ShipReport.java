@@ -17,6 +17,16 @@ public final class ShipReport {
     private String stopped = "";
     private int terminal;
 
+    /** A pass that sent nothing. */
+    public ShipReport() {}
+
+    /** A report with the totals given, for a caller that counted them itself. */
+    public ShipReport(long recordsSent, long bytesSent, String stopped) {
+        this.recordsSent = recordsSent;
+        this.bytesSent = bytesSent;
+        this.stopped = stopped;
+    }
+
     /** Batches accepted. */
     public int batchesSent() {
         return batchesSent;
